@@ -1,178 +1,87 @@
-# 批量电子书转换器
+# 📚 批量电子书整合工具 | Bulk E-book Integrator
 
-**其他语言 / Other Languages / 他の言語:**
-- [English Version](../README.md)
-- [日本語版 (Japanese)](README_日本語.md)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
+[![Package Manager](https://img.shields.io/badge/uv-极速-purple)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+专为**松鼠党、漫画迷和网文读者**设计。这是一个单文件、零依赖痛点的 Python 脚本，能将散乱的 **PDF、图片文件夹、CBZ、EPUB 分卷** 智能合并为一本完整的电子书 (EPUB/PDF/MOBI/AZW3)。
 
 ---
 
-一个功能强大的Python工具，用于批量将各种文档格式转换为不同的电子书格式。支持漫画模式（图片优先）和小说模式（文本优先）处理。
+## ✨ 核心功能
 
-## 功能特性
+- **📚 双重模式**:
+  - **漫画模式 (Comic Mode)**: 针对图片/CBZ优化，无损合并，适合漫画党。
+  - **小说模式 (Novel Mode)**: 针对文字重排优化，智能合并网文章节或散乱 PDF。
+- **🖼️ 智能封面**: 自动提取第一页作为封面，也支持命令行指定自定义封面路径。
+- **🚀 高性能**: 内置多线程处理，飞速处理大量图片和文档。
+- **🔌 Calibre 集成**: 调用 `ebook-convert` 引擎确保完美渲染 (Windows 下支持自动部署便携版)。
+- **🛠️ 极速启动**: 专为 `uv` 优化，无需手动配置虚拟环境，即开即用。
 
-- **多格式支持**：在PDF、EPUB、CBZ、MOBI、AZW3等多种格式之间转换
-- **双处理模式**：
-  - 漫画模式：针对扫描文档和图片密集型内容优化
-  - 小说模式：针对基于文本的电子书优化
-- **批量处理**：一次性处理整个文件夹的文档
-- **并行处理**：多线程转换，提高处理速度
-- **交互式和命令行**：支持类似GUI的交互模式和命令行界面
-- **多语言支持**：中文、英文和日文界面
-- **自动Calibre集成**：自动下载和设置Calibre工具
-- **质量控制**：可调节的图片质量设置
+---
 
-## 安装
+## ⚡ 极速开始 (使用 uv)
 
-### 前置要求
+本项目推荐使用 **[uv](https://github.com/astral-sh/uv)** 包管理器。你无需手动安装 pip 依赖。
 
-安装所需的Python包：
-
+### 1. 安装 uv
 ```bash
-pip install PyMuPDF Pillow EbookLib requests tqdm natsort
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS / Linux
+curl -lsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Calibre集成
-
-工具处理Calibre安装：
-- **Windows**：自动下载和设置便携版Calibre（仅Windows支持自动安装）
-- **Linux/macOS**：需要手动安装 - 您需要手动配置Calibre路径
-- **原生格式**：CBZ和PDF整合成EPUB（仅漫画模式）无需Calibre
-
-**注意**：对于Linux和macOS用户，您需要手动安装Calibre并确保`ebook-convert`工具在系统PATH中。原生CBZ和PDF到EPUB的转换（仅漫画模式）不需要Calibre。
-
-## 使用方法
-
-### 交互模式
-
-不带参数运行进入交互模式：
+### 2. 直接运行
+克隆仓库后，直接使用 `uv run`。它会自动在隔离环境中同步所有依赖 (PyMuPDF, Pillow 等) 并启动脚本。
 
 ```bash
-python 批量电子书整合.py
+# 启动交互式向导 (小白推荐)
+uv run 批量电子书整合.py
 ```
 
-### 命令行模式
+---
+
+## 📖 使用示例
+
+### 🖥️ 交互模式
+不带参数运行脚本。按照屏幕提示选择文件夹、语言、目标格式和封面设置。
 
 ```bash
-python 批量电子书整合.py -p "源文件路径" -f epub -m comic
+uv run 批量电子书整合.py
 ```
 
-#### 参数说明
+### 🛠️ 命令行模式 (批处理)
 
-**必需参数：**
-- `-p, --path`：包含要转换文件的源文件夹路径
-- `-f, --format`：目标输出格式（epub、pdf、cbz、mobi等）
-- `-m, --mode`：处理模式（`comic`或`novel`）
-
-**可选参数：**
-- `-o, --output`：输出文件基础名称（默认：文件夹名称）
-- `-q, --quality`：图片质量1-100（默认：85）
-- `-t, --title`：电子书元数据中的标题
-- `-l, --lang`：界面语言（zh/en/ja，默认：zh）
-- `-w, --workers`：并行线程数（默认：CPU核心数）
-
-### 格式选项
-
-**常用格式：**
-- `epub` - 通用电子书格式
-- `pdf` - 通用文档格式
-- `cbz` - 漫画书存档格式
-
-**Kindle格式：（需要Calibre）**
-- `mobi` - 旧版Kindle格式
-- `azw3` - 新版Kindle格式
-
-**其他格式（需要Calibre）：**
-- `docx`、`txt`、`kepub`、`fb2`、`lit`、`lrf`、`pdb`、`pmlz`、`rb`、`rtf`、`tcr`、`txtz`、`htmlz`
-
-**特殊选项：**
-- `all_native` - 同时生成EPUB + PDF + CBZ
-
-## 使用示例
-
-### 漫画模式示例
-
+**将漫画文件夹合并为单一 PDF:**
 ```bash
-# 将PDF扫描件转换为EPUB
-python 批量电子书整合.py -p "C:\我的扫描" -f epub --mode comic
-
-# 将CBZ漫画转换为PDF
-python 批量电子书整合.py -p "D:\漫画" -f pdf --mode comic
-
-# 转换为多种格式
-python 批量电子书整合.py -p "C:\漫画" -f all_native --mode comic
+uv run 批量电子书整合.py -p "C:\Comics\OnePiece" -f pdf -m comic
 ```
 
-### 小说模式示例
-
+**合并小说章节并指定封面:**
 ```bash
-# 将EPUB小说转换为MOBI格式用于Kindle
-python 批量电子书整合.py -p "D:\小说" -f mobi --mode novel
-
-# 将混合格式转换为EPUB
-python 批量电子书整合.py -p "E:\书籍" -f epub --mode novel
-
-# 高质量转换
-python 批量电子书整合.py -p "F:\图书馆" -f azw3 --mode novel -q 95
+uv run 批量电子书整合.py -p "D:\Novels\三体" -f epub -m novel --cover "D:\Images\Cover.jpg"
 ```
 
-## 处理模式
+**批量处理多个书籍文件夹到 Kindle 格式:**
+```bash
+uv run 批量电子书整合.py -p "C:\Book1" "C:\Book2" -f azw3 -m novel
+```
 
-### 漫画模式
-- **最适合**：扫描文档、漫画、图片密集型内容
-- **处理流程**：文件 → 图片 → EPUB → 最终格式
-- **优化重点**：图片质量和布局保持
+---
 
-### 小说模式
-- **最适合**：基于文本的电子书、小说、文档
-- **处理流程**：文件 → PDF → 合并PDF → EPUB → 最终格式
-- **优化重点**：文本流和阅读体验
+## 📝 关于代码 (往世乐土)
 
-## 支持的输入格式
+代码内部变量命名致敬 **《崩坏3》往世乐土 (Elysian Realm)** 的十三英桀，每位英桀负责特定的逻辑职能：
 
-- **PDF**：扫描文档、数字PDF
-- **CBZ/CBR**：漫画书存档
-- **EPUB**：数字电子书
-- **MOBI/AZW3**：Kindle格式
-- **其他**：Calibre支持的任何格式
+- **`elysiaFitz`**: 负责完美无瑕的文档解析 (PyMuPDF)。
+- **`edenImage`**: 负责艺术般的图像处理 (Pillow)。
+- **`kevinConcurrent`**: 负责“天火”级别的多线程并发。
+- **`griseoEpub`**: 负责绘制 EPUB 结构。
+- 以及其他英桀在后台确保转换过程的万无一失。
 
-## 输出质量
+---
 
-- **图片质量**：可调节1-100（默认：85）
-- **并行处理**：多线程提高速度
-- **格式保持**：保持原始布局和格式
-- **元数据**：保持书籍标题和作者信息
-
-## 故障排除
-
-### 常见问题
-
-1. **缺少依赖项**：使用pip安装所需包
-2. **找不到Calibre**：使用交互模式进行自动下载
-3. **权限错误**：以管理员身份运行或检查文件夹权限
-4. **DRM保护文件**：无法处理DRM保护的内容
-
-### 性能优化建议
-
-- 使用SSD存储以提高处理速度
-- 根据CPU核心数调整工作线程数
-- 降低图片质量以加快处理速度
-- 大型转换期间关闭其他应用程序
-
-## 致谢
-
-本项目依赖于多个优秀的开源库和工具：
-
-### 核心依赖
-- **[Calibre](https://calibre-ebook.com/)**：强大的电子书管理和转换套件，支持格式转换
-- **[PyMuPDF](https://pymupdf.readthedocs.io/)**：高性能PDF和图像处理
-- **[Pillow](https://python-pillow.org/)**：Python图像处理库
-- **[EbookLib](https://github.com/aerkalov/ebooklib)**：电子书创建和操作库
-
-### 附加库
-- **requests**：HTTP请求库
-- **tqdm**：进度条库，提升用户体验
-- **natsort**：自然排序，用于文件组织
-- **argparse**：命令行参数解析
-
-### 特别感谢
-- **Calibre团队**：提供最全面的电子书转换工具
+## 📄 许可证
+[MIT License](LICENSE)

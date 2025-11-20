@@ -1,178 +1,87 @@
-# バッチ電子書籍コンバーター
+# 📚 電子書籍一括統合ツール | Bulk E-book Integrator
 
-**他の言語 / Other Languages / 其他语言:**
-- [English Version](../README.md)
-- [中文版本 (Chinese)](README_中文.md)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
+[![Package Manager](https://img.shields.io/badge/uv-高速-purple)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+**自炊ユーザー、漫画愛好家、Web小説コレクター**のために設計されました。散乱した**PDF、画像フォルダ、CBZ、EPUB**を、単一の完全な電子書籍ファイル (EPUB/PDF/MOBI/AZW3) にスマートに統合する、依存関係ゼロのPythonスクリプトです。
 
 ---
 
-様々なドキュメント形式を異なる電子書籍形式に変換するための強力なPythonツール。漫画モード（画像優先）と小説モード（テキスト優先）の両方の処理をサポートします。
+## ✨ 主な機能
 
-## 機能
+- **📚 デュアルモード**:
+  - **コミックモード (Comic Mode)**: 画像/CBZに最適化。無劣化で統合します。
+  - **小説モード (Novel Mode)**: テキストのリフローに最適化。Web小説の章やPDFを統合します。
+- **🖼️ スマートカバー**: 最初のページを自動的に表紙として抽出します。カスタムパス指定も可能です。
+- **🚀 高パフォーマンス**: マルチスレッド処理により、大量の画像やドキュメントを高速に処理します。
+- **🔌 Calibre 連携**: `ebook-convert` エンジンを使用して完璧なレンダリングを実現 (Windowsではポータブル版の自動配備に対応)。
+- **🛠️ クイック起動**: `uv` に最適化されており、手動での仮想環境構築は不要です。
 
-- **多形式サポート**：PDF、EPUB、CBZ、MOBI、AZW3など多数の形式間で変換
-- **デュアル処理モード**：
-  - 漫画モード：スキャンされたドキュメントと画像重視のコンテンツに最適化
-  - 小説モード：テキストベースの電子書籍に最適化
-- **バッチ処理**：フォルダ内のドキュメントを一度に処理
-- **並列処理**：マルチスレッド変換で高速処理
-- **インタラクティブ＆コマンドライン**：GUIライクなインタラクティブモードとコマンドラインインターフェース
-- **多言語サポート**：中国語、英語、日本語インターフェース
-- **自動Calibre統合**：Calibreツールの自動ダウンロードとセットアップ
-- **品質制御**：調整可能な画像品質設定
+---
 
-## インストール
+## ⚡ クイックスタート (uvを使用)
 
-### 前提条件
+このプロジェクトは **[uv](https://github.com/astral-sh/uv)** パッケージマネージャーの使用を推奨しています。pipで手動インストールする必要はありません。
 
-必要なPythonパッケージをインストール：
-
+### 1. uv のインストール
 ```bash
-pip install PyMuPDF Pillow EbookLib requests tqdm natsort
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS / Linux
+curl -lsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Calibre統合
-
-ツールはCalibreのインストールを処理します：
-- **Windows**：ポータブルCalibreの自動ダウンロードとセットアップ（Windowsのみ自動インストールをサポート）
-- **Linux/macOS**：手動インストールが必要 - Calibreパスを手動で設定する必要があります
-- **ネイティブ形式**：CBZとPDFのEPUB統合（漫画モードのみ）はCalibre不要
-
-**注意**：LinuxとmacOSユーザーの場合、Calibreを手動でインストールし、`ebook-convert`ツールがシステムPATHにあることを確認する必要があります。ネイティブのCBZとPDFからEPUBへの変換（漫画モードのみ）はCalibreを必要としません。
-
-## 使用方法
-
-### インタラクティブモード
-
-引数なしで実行してインタラクティブモードに入る：
+### 2. 即時実行
+リポジトリをクローンし、`uv run` を実行するだけです。依存関係 (PyMuPDF, Pillow 等) が自動的に同期され、スクリプトが起動します。
 
 ```bash
-python 批量电子书整合.py
+# インタラクティブモード (ウィザード形式)
+uv run 批量电子书整合.py
 ```
 
-### コマンドラインモード
+---
+
+## 📖 使用例
+
+### 🖥️ インタラクティブモード
+引数なしでスクリプトを実行します。画面の指示に従って、フォルダ、言語、出力形式、表紙設定を選択してください。
 
 ```bash
-python 批量电子书整合.py -p "ソースパス" -f epub -m comic
+uv run 批量电子书整合.py
 ```
 
-#### パラメータ
+### 🛠️ コマンドラインモード (自動化)
 
-**必須：**
-- `-p, --path`：変換するファイルを含むソースフォルダパス
-- `-f, --format`：ターゲット出力形式（epub、pdf、cbz、mobiなど）
-- `-m, --mode`：処理モード（`comic`または`novel`）
-
-**オプション：**
-- `-o, --output`：出力ファイルのベース名（デフォルト：フォルダ名）
-- `-q, --quality`：画像品質1-100（デフォルト：85）
-- `-t, --title`：メタデータ内の電子書籍タイトル
-- `-l, --lang`：インターフェース言語（zh/en/ja、デフォルト：zh）
-- `-w, --workers`：並列スレッド数（デフォルト：CPU数）
-
-### 形式オプション
-
-**一般的な形式：**
-- `epub` - 汎用電子書籍形式
-- `pdf` - 汎用ドキュメント形式
-- `cbz` - コミックブックアーカイブ
-
-**Kindle形式：（Calibreが必要）**
-- `mobi` - 旧Kindle形式
-- `azw3` - 新Kindle形式
-
-**その他の形式（Calibreが必要）：**
-- `docx`、`txt`、`kepub`、`fb2`、`lit`、`lrf`、`pdb`、`pmlz`、`rb`、`rtf`、`tcr`、`txtz`、`htmlz`
-
-**特別：**
-- `all_native` - EPUB + PDF + CBZを同時生成
-
-## 例
-
-### 漫画モードの例
-
+**漫画フォルダを単一のPDFに統合:**
 ```bash
-# PDFスキャンをEPUBに変換
-python 批量电子书整合.py -p "C:\MyScans" -f epub --mode comic
-
-# CBZコミックをPDFに変換
-python 批量电子书整合.py -p "D:\Comics" -f pdf --mode comic
-
-# 複数形式に変換
-python 批量电子书整合.py -p "C:\Comics" -f all_native --mode comic
+uv run 批量电子书整合.py -p "C:\Comics\OnePiece" -f pdf -m comic
 ```
 
-### 小説モードの例
-
+**小説の章を統合し、表紙を指定:**
 ```bash
-# EPUB小説をKindle用MOBIに変換
-python 批量电子书整合.py -p "D:\Novels" -f mobi --mode novel
-
-# 混合形式をEPUBに変換
-python 批量电子书整合.py -p "E:\Books" -f epub --mode novel
-
-# 高品質変換
-python 批量电子书整合.py -p "F:\Library" -f azw3 --mode novel -q 95
+uv run 批量电子书整合.py -p "D:\Novels\Overlord" -f epub -m novel --cover "D:\Images\Cover.jpg"
 ```
 
-## 処理モード
+**複数のフォルダを一括でKindle形式に変換:**
+```bash
+uv run 批量电子书整合.py -p "C:\Book1" "C:\Book2" -f azw3 -m novel
+```
 
-### 漫画モード
-- **最適な用途**：スキャンされたドキュメント、漫画、画像重視のコンテンツ
-- **処理**：ファイル → 画像 → EPUB → 最終形式
-- **最適化**：画像品質とレイアウト保持
+---
 
-### 小説モード
-- **最適な用途**：テキストベースの電子書籍、小説、ドキュメント
-- **処理**：ファイル → PDF → 統合PDF → EPUB → 最終形式
-- **最適化**：テキストフローと読書体験
+## 📝 トリビア (古の楽園)
 
-## サポートされる入力形式
+内部コードの変数名は、**『崩壊3rd』の古の楽園 (Elysian Realm)** に登場する十三英傑にちなんで名付けられています：
 
-- **PDF**：スキャンされたドキュメント、デジタルPDF
-- **CBZ/CBR**：コミックブックアーカイブ
-- **EPUB**：デジタル電子書籍
-- **MOBI/AZW3**：Kindle形式
-- **その他**：Calibreがサポートする任意の形式
+- **`elysiaFitz`**: 欠点のないドキュメント解析 (PyMuPDF)。
+- **`edenImage`**: 芸術的な画像処理 (Pillow)。
+- **`kevinConcurrent`**: 圧倒的なマルチスレッド並行処理。
+- **`griseoEpub`**: EPUB構造の描画。
+- その他、英傑たちがバックグラウンドで変換プロセスを支えています。
 
-## 出力品質
+---
 
-- **画像品質**：調整可能1-100（デフォルト：85）
-- **並列処理**：高速化のためのマルチスレッド
-- **形式保持**：元のレイアウトとフォーマットを維持
-- **メタデータ**：書籍タイトルと著者情報を保持
-
-## トラブルシューティング
-
-### 一般的な問題
-
-1. **依存関係の不足**：pipで必要なパッケージをインストール
-2. **Calibreが見つからない**：インタラクティブモードで自動ダウンロードを使用
-3. **権限エラー**：管理者として実行するか、フォルダ権限を確認
-4. **DRM保護ファイル**：DRM保護されたコンテンツは処理できません
-
-### パフォーマンスのヒント
-
-- 高速処理のためにSSDストレージを使用
-- CPUコア数に基づいてワーカー数を調整
-- 高速処理のために画像品質を下げる
-- 大規模変換中は他のアプリケーションを閉じる
-
-## 謝辞
-
-このプロジェクトは、いくつかの優れたオープンソースライブラリとツールに依存しています：
-
-### コア依存関係
-- **[Calibre](https://calibre-ebook.com/)**：形式変換を可能にする強力な電子書籍管理・変換スイート
-- **[PyMuPDF](https://pymupdf.readthedocs.io/)**：高性能PDF・画像処理
-- **[Pillow](https://python-pillow.org/)**：画像操作のためのPython画像ライブラリ
-- **[EbookLib](https://github.com/aerkalov/ebooklib)**：電子書籍作成・操作ライブラリ
-
-### 追加ライブラリ
-- **requests**：ウェブリクエスト用HTTPライブラリ
-- **tqdm**：ユーザーエクスペリエンス向上のためのプログレスバーライブラリ
-- **natsort**：ファイル整理のための自然ソート
-- **argparse**：コマンドライン引数解析
-
-### 特別な感謝
-- **Calibreチーム**：最も包括的な電子書籍変換ツールを提供
+## 📄 ライセンス
+[MIT License](LICENSE)
