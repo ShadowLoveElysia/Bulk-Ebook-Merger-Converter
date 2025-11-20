@@ -1,181 +1,89 @@
-# Batch E-book Converter
 
-**Other Languages / 其他语言 / 他の言語:**
-- [中文版本 (Chinese)](docx/README_中文.md)
-- [日本語版 (Japanese)](docx/README_日本語.md)
+# 📚 Bulk E-book Merger & Converter | 批量电子书整合工具
+
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue)](https://python.org)
+[![Package Manager](https://img.shields.io/badge/uv-lightning--fast-purple)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+A blazing fast, single-file script to **merge dispersed folders of files into a single E-book**.  
+专为松鼠党设计：零依赖痛点，将散乱的 **PDF, Images, CBZ, EPUB** 智能合并为一本完整的电子书 (EPUB/PDF/MOBI/AZW3)。
 
 ---
 
-A powerful Python tool for batch converting various document formats into different e-book formats. Supports both comic mode (image-first) and novel mode (text-first) processing.
+## ✨ Features (核心功能)
 
-## Features
+- **📚 Dual Modes**: 
+  - **Comic Mode**: Specialized for merging Image folders/CBZs into PDF/EPUB.
+  - **Novel Mode**: Intelligent text reflow for merging web novels or chapter files.
+- **🖼️ Auto-Cover**: Automatically extracts the first page as the cover, or supports custom cover paths.
+- **🚀 High Performance**: Powered by multi-threading for high-speed image/pdf processing.
+- **🔌 Calibre Integration**: Uses `ebook-convert` for perfect format rendering (auto-setups on Windows).
+- **🛠️ Zero Friction**: Designed to be run directly with `uv` - no manual virtualenv needed.
 
-- **Multi-format Support**: Convert between PDF, EPUB, CBZ, MOBI, AZW3, and many other formats
-- **Dual Processing Modes**: 
-  - Comic Mode: Optimized for scanned documents and image-heavy content
-  - Novel Mode: Optimized for text-based e-books
-- **Batch Processing**: Process entire folders of documents at once
-- **Parallel Processing**: Multi-threaded conversion for faster performance
-- **Interactive & Command-line**: Both GUI-like interactive mode and command-line interface
-- **Multi-language Support**: Chinese, English, and Japanese interfaces
-- **Automatic Calibre Integration**: Automatic download and setup of Calibre tools
-- **Quality Control**: Adjustable image quality settings
+---
 
-## v0.0.2 (Updated on 8/16/2025)
-- **Enhanced Interactive Mode:** Before processing, the script now provides a detailed file summary (total count, format breakdown) and allows you to selectively ignore files with decimal numbers in their names.
-- **Robust Error Handling:** When a file conversion fails in interactive mode, you now have the option to **Retry** the conversion, **Skip** the problematic file, or **Abort** the process, preventing a single bad file from halting the entire batch.
-## Installation
+## ⚡ Quick Start with `uv` (推荐)
 
-### Prerequisites
+This project is optimized for **[uv](https://github.com/astral-sh/uv)**. You don't need to manually install pip packages.
 
-Install the required Python packages:
-
+### 1. Install uv
 ```bash
-pip install PyMuPDF Pillow EbookLib requests tqdm natsort
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS / Linux
+curl -lsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Calibre Integration
-
-The tool handles Calibre installation:
-- **Windows**: Automatic download and setup of portable Calibre (only Windows supports automatic installation)
-- **Linux/macOS**: Manual installation required - you need to configure Calibre path manually
-- **Native Formats**: CBZ and PDF consolidation to EPUB (comic mode only) works without Calibre
-
-**Note**: For Linux and macOS users, you need to manually install Calibre and ensure the `ebook-convert` tool is in your system PATH. The native CBZ and PDF to EPUB conversion (comic mode only) does not require Calibre.
-
-## Usage
-
-### Interactive Mode
-
-Run without arguments for interactive mode:
+### 2. Run Immediately (直接运行)
+Clone the repo and run. `uv` will automatically sync all dependencies (PyMuPDF, Pillow, etc.) in an isolated environment instantly.
 
 ```bash
-python 批量电子书整合.py
+# Run in interactive mode (Interactive Wizard)
+uv run 批量电子书整合.py
 ```
 
-### Command-line Mode
+---
+
+## 📖 Usage Examples (使用示例)
+
+### 🖥️ Interactive Mode (小白/交互模式)
+Simply run the script without arguments. Follow the on-screen guide to select your folder, language (En/Zh/Ja), and target format.
 
 ```bash
-python 批量电子书整合.py -p "path/to/source" -f epub -m comic
+uv run 批量电子书整合.py
 ```
 
-#### Parameters
+### 🛠️ Command Line Mode (高级/命令行模式)
 
-**Required:**
-- `-p, --path`: Source folder path containing files to convert
-- `-f, --format`: Target output format (epub, pdf, cbz, mobi, etc.)
-- `-m, --mode`: Processing mode (`comic` or `novel`)
-
-**Optional:**
-- `-o, --output`: Output file base name (default: folder name)
-- `-q, --quality`: Image quality 1-100 (default: 85)
-- `-t, --title`: E-book title in metadata
-- `-l, --lang`: Interface language (zh/en/ja, default: zh)
-- `-w, --workers`: Number of parallel threads (default: CPU count)
-
-### Format Options
-
-**Common Formats:**
-- `epub` - Universal e-book format
-- `pdf` - Universal document format  
-- `cbz` - Comic book archive
-
-**Kindle Formats:(requires Calibre)**
-- `mobi` - Old Kindle format
-- `azw3` - New Kindle format
-
-**Other Formats (requires Calibre):**
-- `docx`, `txt`, `kepub`, `fb2`, `lit`, `lrf`, `pdb`, `pmlz`, `rb`, `rtf`, `tcr`, `txtz`, `htmlz`
-
-**Special:**
-- `all_native` - Generate EPUB + PDF + CBZ simultaneously
-
-## Examples
-
-### Comic Mode Examples
-
+**Merge a Manga folder into a single PDF:**
 ```bash
-# Convert PDF scans to EPUB
-python 批量电子书整合.py -p "C:\MyScans" -f epub --mode comic
-
-# Convert CBZ comics to PDF
-python 批量电子书整合.py -p "D:\Comics" -f pdf --mode comic
-
-# Convert to multiple formats
-python 批量电子书整合.py -p "C:\Comics" -f all_native --mode comic
+uv run 批量电子书整合.py -p "C:\Comics\OnePiece" -f pdf -m comic
 ```
 
-### Novel Mode Examples
-
+**Merge Novel chapters with a Custom Cover:**
 ```bash
-# Convert EPUB novels to MOBI for Kindle
-python 批量电子书整合.py -p "D:\Novels" -f mobi --mode novel
-
-# Convert mixed formats to EPUB
-python 批量电子书整合.py -p "E:\Books" -f epub --mode novel
-
-# High quality conversion
-python 批量电子书整合.py -p "F:\Library" -f azw3 --mode novel -q 95
+uv run 批量电子书整合.py -p "D:\Novels\Overlord" -f epub -m novel --cover "D:\Novels\Cover.jpg"
 ```
 
-## Processing Modes
+**Batch Process Multiple Folders to Kindle Format:**
+```bash
+uv run 批量电子书整合.py -p "C:\Book1" "C:\Book2" -f azw3 -m novel
+```
 
-### Comic Mode
-- **Best for**: Scanned documents, manga, comics, image-heavy content
-- **Process**: Files → Images → EPUB → Final format
-- **Optimization**: Image quality and layout preservation
+---
 
-### Novel Mode  
-- **Best for**: Text-based e-books, novels, documents
-- **Process**: Files → PDF → Merged PDF → EPUB → Final format
-- **Optimization**: Text flow and reading experience
+## 📝 Trivia: The "Elysian" Logic
 
-## Supported Input Formats
+The internal codebase follows a unique variable naming convention inspired by **Honkai Impact 3rd (Elysian Realm)** to handle specific tasks:
 
-- **PDF**: Scanned documents, digital PDFs
-- **CBZ/CBR**: Comic book archives
-- **EPUB**: Digital e-books
-- **MOBI/AZW3**: Kindle formats
-- **Other**: Any format supported by Calibre
+- **`elysiaFitz`**: PDF/Document parsing (PyMuPDF).
+- **`edenImage`**: Image processing & art (Pillow).
+- **`kevinConcurrent`**: Powerful multi-threaded execution.
+- **`griseoEpub`**: Constructing the EPUB structure.
+- ...and other Flame-Chasers ensuring a flawless conversion.
 
-## Output Quality
+---
 
-- **Image Quality**: Adjustable 1-100 (default: 85)
-- **Parallel Processing**: Multi-threaded for speed
-- **Format Preservation**: Maintains original layout and formatting
-- **Metadata**: Preserves book titles and author information
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Missing Dependencies**: Install required packages with pip
-2. **Calibre Not Found**: Use interactive mode for automatic download
-3. **Permission Errors**: Run as administrator or check folder permissions
-4. **DRM Protected Files**: Cannot process DRM-protected content
-
-### Performance Tips
-
-- Use SSD storage for faster processing
-- Adjust worker count based on CPU cores
-- Lower image quality for faster processing
-- Close other applications during large conversions
-
-## Acknowledgments
-
-This project relies on several excellent open-source libraries and tools:
-
-### Core Dependencies
-- **[Calibre](https://calibre-ebook.com/)**: The powerful e-book management and conversion suite that enables format conversions
-- **[PyMuPDF](https://pymupdf.readthedocs.io/)**: High-performance PDF and image processing
-- **[Pillow](https://python-pillow.org/)**: Python Imaging Library for image manipulation
-- **[EbookLib](https://github.com/aerkalov/ebooklib)**: E-book creation and manipulation library
-
-### Additional Libraries
-- **requests**: HTTP library for web requests
-- **tqdm**: Progress bar library for user experience
-- **natsort**: Natural sorting for file organization
-- **argparse**: Command-line argument parsing
-
-### Special Thanks
-- **Calibre Team**: For providing the most comprehensive e-book conversion tools
+## 📄 License
+[MIT License](LICENSE)

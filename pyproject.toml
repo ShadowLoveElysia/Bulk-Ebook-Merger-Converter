@@ -1,0 +1,22 @@
+pyproject_toml_content = r"""[project]
+name = "bulk-ebook-integrator"
+version = "1.0.0"
+description = "Batch merge dispersed files (PDF, Images, EPUB) into a single E-book."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "PyMuPDF>=1.22.0",
+    "Pillow>=10.0.0",
+    "EbookLib>=0.17.1",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+    "natsort>=8.4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+"""
+
+with open("pyproject.toml", "w", encoding="utf-8") as f:
+    f.write(pyproject_toml_content)
