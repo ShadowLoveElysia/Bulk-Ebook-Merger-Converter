@@ -8,9 +8,12 @@ import shutil
 import webbrowser
 import xml.etree.ElementTree as ET
 import subprocess
+import gc 
 import time
 import zipfile
 import importlib
+import posixpath
+import urllib.parse
 
 elysiaFitz = None
 edenImage = None
@@ -488,13 +491,64 @@ def processImageWorker(workerArguments):
     except Exception as error:
         return {'index': pageIndex, 'error': str(error)}
 
-def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None):
+def processPdfBatchWorker(workerArguments):
+    filePath, pages, quality, startIndexBase, imageFormat = workerArguments
+    import fitz as elysiaFitz
+    from PIL import Image as edenImage
+    results = []
+    doc = None
+    try:
+        doc = elysiaFitz.open(filePath)
+        for i, pageNum in enumerate(pages):
+            globalIndex = startIndexBase + i
+            try:
+                pageObject = doc.load_page(pageNum)
+                imageList = pageObject.get_images(full=True)
+                if not imageList:
+                    results.append({'index': globalIndex, 'data': None})
+                    continue
+                imageInfo = doc.extract_image(imageList[0][0])
+                imageData = imageInfo["image"]
+                pillowImage = edenImage.open(io.BytesIO(imageData))
+                if pillowImage.mode in ("RGBA", "P"): pillowImage = pillowImage.convert("RGB")
+                byteBuffer = io.BytesIO()
+                pillowImage.save(byteBuffer, format=imageFormat.upper(), quality=quality, optimize=(imageFormat=='jpeg'))
+                results.append({'index': globalIndex, 'data': byteBuffer.getvalue()})
+            except Exception as e:
+                results.append({'index': globalIndex, 'error': str(e)})
+    except Exception as e:
+        for i in range(len(pages)):
+             results.append({'index': startIndexBase + i, 'error': str(e)})
+    finally:
+        if doc: doc.close()
+    return results
+
+def processZipImageWorker(workerArguments):
+    pageIndex, zipPath, internalPath, imageQuality, imageFormat = workerArguments
+    from PIL import Image as edenImage
+    import zipfile
+    import io
+    try:
+        with zipfile.ZipFile(zipPath, 'r') as z:
+            imageData = z.read(internalPath)
+        
+        imageObject = edenImage.open(io.BytesIO(imageData))
+        if imageObject.mode in ("P", "RGBA"): imageObject = imageObject.convert("RGB")
+        imageBuffer = io.BytesIO()
+        imageObject.save(imageBuffer, format=imageFormat.upper(), quality=imageQuality, optimize=(imageFormat=='jpeg'))
+        return {'index': pageIndex, 'data': imageBuffer.getvalue()}
+    except Exception as error:
+        return {'index': pageIndex, 'error': str(error)}
+
+def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None, imageFormat='jpeg'):
     print(STRINGS['consolidating'][languageCode].format(len(os.listdir(sourceDirectory)), 'PDF'))
     pdfFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.pdf')])
     
     tasks, pageCounter = [], 0
-    chapterInfo = [] # (startIndex, title)
+    chapterInfo = [] 
     
+    BATCH_SIZE = 10 
+
     for path in pdfFiles:
         baseName = os.path.splitext(os.path.basename(path))[0]
         numMatch = re.search(r"(\d+(?:\.\d+)?)", baseName)
@@ -506,16 +560,17 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
                 pageCount = len(doc)
                 if pageCount > 0:
                      chapterInfo.append((startIndex, title))
-                     for pageNum in range(pageCount):
-                        tasks.append((pageCounter, path, pageNum, imageQuality))
-                        pageCounter += 1
+                     for i in range(0, pageCount, BATCH_SIZE):
+                        chunk = range(i, min(i + BATCH_SIZE, pageCount))
+                        tasks.append((path, chunk, imageQuality, pageCounter, imageFormat))
+                        pageCounter += len(chunk)
         except Exception as error: 
             print(STRINGS['error_corrupt_file_skip'][languageCode].format(path, error))
 
     if not tasks:
         raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'PDF'))
     
-    print(STRINGS['preparing_pages'][languageCode].format(len(tasks)))
+    print(STRINGS['preparing_pages'][languageCode].format(pageCounter))
     
     griseoEpubBook = griseoEpub.EpubBook()
     griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}')
@@ -530,35 +585,36 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     processedResults, nextToWriteIndex = {}, 0
     firstPageData = None
 
-    limitPendingFutures = workerCount * 3
     runningFutures = set()
     tasksIter = iter(tasks)
 
     with kevinConcurrent.ProcessPoolExecutor(max_workers=workerCount) as executor:
-        for _ in range(min(limitPendingFutures, len(tasks))):
+        for _ in range(min(workerCount * 2, len(tasks))):
             try:
                 task = next(tasksIter)
-                future = executor.submit(processPageWorker, task)
+                future = executor.submit(processPdfBatchWorker, task)
                 runningFutures.add(future)
             except StopIteration:
                 break
 
-        with villVTqdm(total=len(tasks), desc=STRINGS['processing_and_writing'][languageCode].format(workerCount, '','')) as pbar:
+        with villVTqdm(total=pageCounter, desc=STRINGS['processing_and_writing'][languageCode].format(workerCount, '','')) as pbar:
             while runningFutures:
                 finishedFutures, pendingFutures = kevinConcurrent.wait(runningFutures, return_when=kevinConcurrent.FIRST_COMPLETED)
                 runningFutures = pendingFutures
                 
                 for future in finishedFutures:
-                    pbar.update(1)
-                    result = future.result()
-                    processedResults[result['index']] = result
+                    results = future.result()
                     
-                    if result['index'] == 0 and not result.get('error') and result.get('data'):
-                        firstPageData = result['data']
+                    for result in results:
+                        pbar.update(1)
+                        processedResults[result['index']] = result
+                    
+                        if result['index'] == 0 and not result.get('error') and result.get('data'):
+                            firstPageData = result['data']
 
                     try:
                         nextTask = next(tasksIter)
-                        newFuture = executor.submit(processPageWorker, nextTask)
+                        newFuture = executor.submit(processPdfBatchWorker, nextTask)
                         runningFutures.add(newFuture)
                     except StopIteration:
                         pass
@@ -567,20 +623,22 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
                         currentResult = processedResults.pop(nextToWriteIndex)
                         if 'error' not in currentResult and currentResult['data']:
                             index, data = currentResult['index'], currentResult['data']
-                            new_index = index
-
-                            imageFileName = f"images/img_{new_index+1:04d}.jpg"
-                            chapterTitle = f"Page {new_index+1}"
                             
-                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{new_index+1}", file_name=imageFileName, media_type="image/jpeg", content=data)
+                            ext = imageFormat
+                            mediaType = f"image/{imageFormat}"
+                            imageFileName = f"images/img_{index+1:04d}.{ext}"
+                            chapterTitle = f"Page {index+1}"
+                            
+                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{index+1}", file_name=imageFileName, media_type=mediaType, content=data)
                             griseoEpubBook.add_item(epubImageItem)
                             
-                            chapterFileName = f"pages/p_{new_index+1:04d}.xhtml"
+                            chapterFileName = f"pages/p_{index+1:04d}.xhtml"
                             epubHtmlChapter = griseoEpub.EpubHtml(title=chapterTitle, file_name=chapterFileName, lang=languageCode)
                             epubHtmlChapter.content = f'<!DOCTYPE html><html><head><title>{chapterTitle}</title><link rel="stylesheet" type="text/css" href="../style/main.css" /></head><body><div><img src="../{imageFileName}" alt="{chapterTitle}"/></div></body></html>'
                             griseoEpubBook.add_item(epubHtmlChapter)
                             griseoEpubBook.spine.append(epubHtmlChapter)
                         nextToWriteIndex += 1
+                        if nextToWriteIndex % 20 == 0: gc.collect()
     
     if coverPath == 'auto' and firstPageData:
         griseoEpubBook.set_cover("cover.jpg", firstPageData)
@@ -606,7 +664,7 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     griseoEpub.write_epub(outputFilePath, griseoEpubBook, {})
     print(STRINGS['consolidation_complete'][languageCode])
 
-def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None):
+def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None, imageFormat='jpeg'):
     print(STRINGS['consolidating'][languageCode].format(len(os.listdir(sourceDirectory)), 'CBZ/CBR'))
     cbzFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith(('.cbz', '.cbr'))])
     if not cbzFiles:
@@ -616,42 +674,39 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}'); griseoEpubBook.set_title(bookTitle); griseoEpubBook.set_language(languageCode); griseoEpubBook.add_author('File Converter')
     styleSheet = griseoEpub.EpubItem(uid="main_style", file_name="style/main.css", media_type="text/css", content='body{text-align:center;}img{max-width:100%;height:auto;}'); griseoEpubBook.add_item(styleSheet); griseoEpubBook.spine = ['nav']
     
-    allImagePaths, tempDirectories = [], []
+    tasks = []
     chapterInfo = [] 
     currentIndex = 0
     
     for cbzPath in cbzFiles:
-        tempDirName = f"temp_{os.path.basename(cbzPath)}"; tempDirectories.append(tempDirName)
         baseName = os.path.splitext(os.path.basename(cbzPath))[0]
         numMatch = re.search(r"(\d+(?:\.\d+)?)", baseName)
         title = f"第{numMatch.group(1)}话" if numMatch else baseName
         
         try:
             with zipfile.ZipFile(cbzPath, 'r') as zipFileHandle:
-                zipFileHandle.extractall(tempDirName)
-                imagesInZip = kalpasNatsort.natsorted([os.path.join(tempDirName, f) for f in zipFileHandle.namelist() if f.lower().endswith(('jpg', 'jpeg', 'png', 'webp'))])
+                imagesInZip = kalpasNatsort.natsorted([f for f in zipFileHandle.namelist() if f.lower().endswith(('jpg', 'jpeg', 'png', 'webp'))])
                 if imagesInZip:
                     chapterInfo.append((currentIndex, title))
-                    allImagePaths.extend(imagesInZip)
-                    currentIndex += len(imagesInZip)
+                    for imgName in imagesInZip:
+                        tasks.append((currentIndex, cbzPath, imgName, imageQuality, imageFormat))
+                        currentIndex += 1
         except zipfile.BadZipFile: pass
     
-    tasks = [(i, path, imageQuality) for i, path in enumerate(allImagePaths)]
     if not tasks: raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'images'))
     print(STRINGS['preparing_pages'][languageCode].format(len(tasks)))
     
     processedResults, nextToWriteIndex = {}, 0
     firstPageData = None
 
-    limitPendingFutures = workerCount * 3
     runningFutures = set()
     tasksIter = iter(tasks)
     
     with kevinConcurrent.ProcessPoolExecutor(max_workers=workerCount) as executor:
-        for _ in range(min(limitPendingFutures, len(tasks))):
+        for _ in range(min(workerCount * 2, len(tasks))):
             try:
                 task = next(tasksIter)
-                future = executor.submit(processImageWorker, task)
+                future = executor.submit(processZipImageWorker, task)
                 runningFutures.add(future)
             except StopIteration:
                 break
@@ -671,27 +726,30 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
                     
                     try:
                         nextTask = next(tasksIter)
-                        newFuture = executor.submit(processImageWorker, nextTask)
+                        newFuture = executor.submit(processZipImageWorker, nextTask)
                         runningFutures.add(newFuture)
                     except StopIteration:
                         pass
 
-                    # Write sequentially
                     while nextToWriteIndex in processedResults:
                         currentResult = processedResults.pop(nextToWriteIndex)
                         if 'error' not in currentResult and currentResult['data']:
                             index, data = currentResult['index'], currentResult['data']
-                            new_index = index
-                            imageFileName = f"images/img_{new_index+1:04d}.jpg"
-                            chapterTitle = f"Page {new_index+1}"
-                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{new_index+1}", file_name=imageFileName, media_type="image/jpeg", content=data)
+                            
+                            ext = imageFormat
+                            mediaType = f"image/{imageFormat}"
+                            imageFileName = f"images/img_{index+1:04d}.{ext}"
+                            chapterTitle = f"Page {index+1}"
+                            
+                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{index+1}", file_name=imageFileName, media_type=mediaType, content=data)
                             griseoEpubBook.add_item(epubImageItem)
-                            chapterFileName = f"pages/p_{new_index+1:04d}.xhtml"
+                            chapterFileName = f"pages/p_{index+1:04d}.xhtml"
                             epubHtmlChapter = griseoEpub.EpubHtml(title=chapterTitle, file_name=chapterFileName, lang=languageCode)
                             epubHtmlChapter.content = f'<!DOCTYPE html><html><head><title>{chapterTitle}</title><link rel="stylesheet" type="text/css" href="../style/main.css" /></head><body><div><img src="../{imageFileName}" alt="{chapterTitle}"/></div></body></html>'
                             griseoEpubBook.add_item(epubHtmlChapter)
                             griseoEpubBook.spine.append(epubHtmlChapter)
                         nextToWriteIndex += 1
+                        if nextToWriteIndex % 20 == 0: gc.collect()
     
     if coverPath == 'auto' and firstPageData:
         griseoEpubBook.set_cover("cover.jpg", firstPageData)
@@ -714,8 +772,6 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     griseoEpubBook.add_item(griseoEpub.EpubNcx()); griseoEpubBook.add_item(griseoEpub.EpubNav())
     griseoEpub.write_epub(outputFilePath, griseoEpubBook, {})
     print(STRINGS['consolidation_complete'][languageCode])
-    for tempDir in tempDirectories:
-        if os.path.isdir(tempDir): shutil.rmtree(tempDir)
 
 def mergeEpubsWithCalibre(sourceDirectory, outputFilePath, bookTitle, languageCode, coverPath=None, calibre_extra_args=None):
     print(STRINGS['epub_merge_notice_calibre'][languageCode])
@@ -848,13 +904,13 @@ def mergePdfs(sourceDirectory, outputFilePath, languageCode):
         print(STRINGS['pdf_merge_fail'][languageCode].format(error))
         return False
 
-def convertEpubToCbz(sourceFile, outputFilePath, imageQuality, languageCode):
+def convertEpubToCbz(sourceFile, outputFilePath, imageQuality, languageCode, imageFormat='jpeg'):
     print(STRINGS['creating_cbz'][languageCode])
     readEpubBook = griseoEpub.read_epub(sourceFile)
     imageList = []
     
     for item in readEpubBook.get_items():
-        if item.get_type() == griseoEpub.ITEM_IMAGE:
+        if item.get_type() == mobiusEbookLib.ITEM_IMAGE:
             imageList.append(item.get_content())
 
     if not imageList:
@@ -871,8 +927,8 @@ def convertEpubToCbz(sourceFile, outputFilePath, imageQuality, languageCode):
                     if imageObject.mode in ("P", "RGBA"):
                         imageObject = imageObject.convert("RGB")
                     imageBuffer = io.BytesIO()
-                    imageObject.save(imageBuffer, "JPEG", quality=imageQuality)
-                    zipFileHandle.writestr(f"page_{index:04d}.jpg", imageBuffer.getvalue())
+                    imageObject.save(imageBuffer, format=imageFormat.upper(), quality=imageQuality, optimize=(imageFormat=='jpeg'))
+                    zipFileHandle.writestr(f"page_{index:04d}.{imageFormat}", imageBuffer.getvalue())
                 except Exception as error: 
                     print(STRINGS['warning_skip_image_error'][languageCode].format(error))
 
@@ -926,6 +982,7 @@ def createArgumentParser():
     optionalGroup.add_argument('-w', '--workers', type=int, default=os.cpu_count(), help=f"并行处理的线程数。默认: {os.cpu_count()}。")
     optionalGroup.add_argument('-c', '--cover', type=str, help="封面图片路径。")
     optionalGroup.add_argument('-rs', '--remove-styling', action='store_true', help="使用Calibre转换时移除字体和颜色样式。")
+    optionalGroup.add_argument('-if', '--image-format', type=str, default='jpeg', choices=['jpeg', 'webp'], help="图片输出格式 (jpeg或webp)。仅在命令行模式下可用。默认: jpeg。")
     optionalGroup.add_argument('-h', '--help', action='help', help="显示此帮助信息并退出。")
     return griseoParser
 
@@ -1075,8 +1132,32 @@ def mergeEpubsSmart(sourceDirectory, outputFilePath, bookTitle, languageCode, co
                     newId = bookPrefix + item.get_id()
                     newFilename = bookPrefix + item.get_name()
                     contentStr = item.get_content().decode('utf-8', errors='ignore')
-                    for oldName, newName in sourceFilenameMap.items():
-                        contentStr = contentStr.replace(f'"{oldName}"', f'"{newName}"').replace(f"'{oldName}'", f"'{newName}'")
+                    
+                    def suReplaceLink(match):
+                        attrName = match.group(1)
+                        quoteChar = match.group(2)
+                        linkUrl = match.group(3)
+                        if linkUrl.startswith(('http:', 'https:', 'mailto:', 'data:', '#')): return match.group(0)
+                        
+                        try: decodedLink = urllib.parse.unquote(linkUrl)
+                        except: decodedLink = linkUrl
+
+                        currentPath = item.get_name()
+                        currentDir = posixpath.dirname(currentPath)
+                        try:
+                            absLink = posixpath.normpath(posixpath.join(currentDir, decodedLink))
+                        except: return match.group(0)
+                        if absLink in sourceFilenameMap:
+                            newTarget = sourceFilenameMap[absLink]
+                            newCurrentPath = newFilename
+                            newCurrentDir = posixpath.dirname(newCurrentPath)
+                            newRelLink = posixpath.relpath(newTarget, newCurrentDir)
+                            encodedNewLink = urllib.parse.quote(newRelLink)
+                            return f'{attrName}={quoteChar}{encodedNewLink}{quoteChar}'
+                        return match.group(0)
+
+                    contentStr = re.sub(r'(src|href)=([\'"])(.*?)\2', suReplaceLink, contentStr)
+
                     newDoc = griseoEpub.EpubHtml(uid=newId, file_name=newFilename, media_type=item.media_type, content=contentStr.encode('utf-8'), lang=languageCode)
                     griseoEpubBook.add_item(newDoc)
                     spineList.append(newDoc)
@@ -1202,9 +1283,9 @@ def runTask(villV_Args):
                 edenTempFiles.append(tempComicEpubPath)
 
                 if majorType == 'pdf':
-                    convertPdfsToEpub(sourceDirectory, tempComicEpubPath, villV_Args.quality, bookTitle, villV_Args.lang, villV_Args.workers, villV_Args.cover)
+                    convertPdfsToEpub(sourceDirectory, tempComicEpubPath, villV_Args.quality, bookTitle, villV_Args.lang, villV_Args.workers, villV_Args.cover, villV_Args.image_format)
                 elif majorType == 'cbz':
-                    convertCbzsToEpub(sourceDirectory, tempComicEpubPath, villV_Args.quality, bookTitle, villV_Args.lang, villV_Args.workers, villV_Args.cover)
+                    convertCbzsToEpub(sourceDirectory, tempComicEpubPath, villV_Args.quality, bookTitle, villV_Args.lang, villV_Args.workers, villV_Args.cover, villV_Args.image_format)
                 elif majorType == 'epub' or majorType == 'text':
                     success, duration, was_cleaned = mergeEpubsWithCalibre(sourceDirectory, tempComicEpubPath, bookTitle, villV_Args.lang, villV_Args.cover, calibre_extra_args)
                     if success:
@@ -1363,7 +1444,7 @@ def runTask(villV_Args):
                             shutil.copy(finalTempPath, finalFilePath)
                             print(STRINGS['task_complete'][villV_Args.lang].format(finalFilePath))
                     elif formatUnit == 'cbz':
-                        convertEpubToCbz(finalTempPath, finalFilePath, villV_Args.quality, villV_Args.lang)
+                        convertEpubToCbz(finalTempPath, finalFilePath, villV_Args.quality, villV_Args.lang, villV_Args.image_format)
                     
                     else:
                         huaCalibreExecutable = ensureCalibreTool('ebook-convert.exe', villV_Args.lang, villV_Args.interactive)
@@ -1545,6 +1626,7 @@ def runInteractiveMode(globalLanguage='zh'):
         sakuraParams.lang = globalLanguage
         sakuraParams.outputpath = None
         sakuraParams.cover = selectedCover
+        sakuraParams.image_format = 'jpeg'
         
         defaultBaseName = os.path.basename(os.path.normpath(sourcePath))
         outputBaseName = input(STRINGS['prompt_output_base_name'][globalLanguage].format(defaultBaseName)).strip() or defaultBaseName
