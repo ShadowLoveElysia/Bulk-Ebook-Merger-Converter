@@ -6,7 +6,6 @@ import argparse
 import platform
 import shutil
 import webbrowser
-import xml.etree.ElementTree as ET
 import subprocess
 import gc 
 import time
@@ -14,17 +13,11 @@ import zipfile
 import importlib
 import posixpath
 import urllib.parse
+import json
 
 elysiaFitz = None
-edenImage = None
-griseoEpub = None
-mobiusEbookLib = None
-kevinConcurrent = None
-aponiaRequests = None
-villVTqdm = None
-kalpasNatsort = None
 
-kiana_custom_calibre_path = None # USER-CONFIGURED: DO NOT CHANGE MANUALLY
+
 
 FORMAT_CHOICE_MAP = {
     '1': 'epub', '2': 'pdf', '3': 'cbz', '4': 'mobi', '5': 'azw3', '6': 'docx',
@@ -41,7 +34,7 @@ STRINGS = {
     'prompt_main_menu': {'zh': "\n欢迎使用！请选择操作模式:\n  1) 控制台交互模式\n  2) 查看所有参数说明\n  3) 退出\n请输入选项 (1, 2 或 3):", 'en': "\nWelcome! Please select an operation mode:\n  1) Interactive Console Mode\n  2) View All Parameter Help\n  3) Exit\nEnter your choice (1, 2 or 3):", 'ja': "\nようこそ！操作モードを選択してください:\n  1) 対話型コンソールモード\n  2) すべてのパラメータヘルプを表示\n  3) 終了\n選択肢（1、2、または3）を入力してください:"},
     'prompt_language_select': {'zh': "请选择后续提示的语言 (zh, en, ja):", 'en': "Please select a language for subsequent prompts (zh, en, ja):", 'ja': "後続のプロンプトの言語を選択してください (zh, en, ja):"},
     'prompt_input_path': {'zh': "请输入包含源文件（PDF, CBZ, EPUB等）的文件夹路径:", 'en': "Please enter the path to the folder containing source files (PDFs, CBZs, EPUBs, etc.):", 'ja': "ソースファイル（PDF、CBZ、EPUBなど）が含まれるフォルダのパスを入力してください:"},
-    'multi_folder_tip': {'zh': "提示：若要一次性处理多个文件夹，请使用命令行参数模式 (例如: python 批量电子书整合.py -p C:\\A C:\\B ...)。", 'en': "Tip: To process multiple folders at once, please use the command-line argument mode (e.g., python 批量电子书整合.py -p C:\\A C:\\B ...).", 'ja': "ヒント：一度に複数のフォルダを処理するには、コマンドライン引数モードを使用してください (例: python 批量电子书整合.py -p C:\\A C:\\B ...)。"},
+    'multi_folder_tip': {'zh': "提示：若要一次性处理多个文件夹，请使用命令行参数模式 (例如: python 批量电子书整合.py -p C:\A C:\B ...)。", 'en': "Tip: To process multiple folders at once, please use the command-line argument mode (e.g., python 批量电子书整合.py -p C:\A C:\B ...).", 'ja': "ヒント：一度に複数のフォルダを処理するには、コマンドライン引数モードを使用してください (例: python 批量电子书整合.py -p C:\A C:\B ...)。"},
     'warn_multi_folder_output_ignored': {'zh': "警告：在多文件夹模式下，-o/--output 参数 '{}' 将被忽略，以防止文件覆盖。将使用文件夹名称作为输出文件名。", 'en': "Warning: In multi-folder mode, the -o/--output argument '{}' is ignored to prevent file overwrites. Folder names will be used for output files.", 'ja': "警告：複数フォルダモードでは、-o/--output引数「{}」はファイルの上書きを防ぐために無視されます。フォルダ名が出力ファイル名として使用されます。"},
     'warn_multi_folder_title_ignored': {'zh': "警告：在多文件夹模式下，-t/--title 参数 '{}' 将被忽略。将使用文件夹名称作为标题。", 'en': "Warning: In multi-folder mode, the -t/--title argument '{}' is ignored. Folder names will be used for titles.", 'ja': "警告：複数フォルダモードでは、-t/--title引数「{}」は無視されます。フォルダ名がタイトルとして使用されます。"},
     'detected_folder_type': {'zh': "检测到文件夹主要包含 '{}' 文件。将首先将它们批量整合成一个临时的EPUB文件。", 'en': "Detected folder primarily contains '{}' files. They will be consolidated into a single temporary EPUB file first.", 'ja': "フォルダに主に「{}」ファイルが含まれていることが検出されました。最初にこれらを単一の一時的なEPUBに統合します。"},
@@ -136,11 +129,11 @@ Kindle形式 ---
     'download_url_fail': {'zh': "未能找到Calibre便携版下载链接。", 'en': "Could not find Calibre Portable download link.", 'ja': "Calibreポータブル版のダウンロードリンクが見つかりませんでした。"},
     'calibre_tool_missing_specific': {'zh': "错误：Calibre 工具 '{}' 在您的 Calibre 安装中未找到。\n此操作需要此工具。请尝试使用本脚本的自动下载功能，或手动安装完整的 Calibre 桌面版。", 'en': "Error: Calibre tool '{}' not found in your Calibre installation.\nThis operation requires this tool. Try using the script's automatic download, or manually install the full Calibre desktop version.", 'ja': "エラー：Calibreツール「{}」がCalibreのインストールに見つかりませんでした。\nこの操作にはこのツールが必要です。このスクリプトの自動ダウンロードを試すか、Calibreの完全デスクトップ版を手動でインストールしてください。"},
     'prompt_mode_select': {'zh': "请选择处理模式:\n  1) 漫画模式 (图片优先，适合扫描PDF/CBZ)\n  2) 小说模式 (文本优先，智能识别TXT/EPUB章节合并)\n您的选择:", 'en': "Select mode:\n  1) Comic Mode (Image-first)\n  2) Novel Mode (Text-first, Smart TXT/EPUB Merge)\nChoice:", 'ja': "モード選択:\n  1) コミック\n  2) 小説 (テキスト優先、スマート結合)\n選択:"},
-    'novel_mode_intro': {'zh': "已选择小说模式。将自动检测是否可用智能合并(TXT/EPUB)，否则使用通用PDF转换流程。", 'en': 'Novel mode selected. Will auto-detect Smart Merge (TXT/EPUB) or fallback to PDF flow.', 'ja': '小説モードが選択されました。スマート結合(TXT/EPUB)を自動検出し、それ以外の場合はPDFフローを使用します。'},
-    'novel_step1_convert_to_pdf': {'zh': "小说模式第一步：使用Calibre将所有源文件转换为PDF格式...", 'en': 'Novel Mode Step 1: Converting all source files to PDF using Calibre...', 'ja': '小説モードステップ1：CalibreでPDFに変換...'}, 
-    'novel_step1_skip_convert': {'zh': "小说模式第一步：检测到源文件已是PDF，跳过转换步骤。", 'en': 'Novel Mode Step 1: Source files are already PDF, skipping conversion.', 'ja': '小説モードステップ1：PDFのため、変換をスキップ。'}, 
-    'novel_step2_merge_pdf': {'zh': "小说模式第二步：合并所有PDF文件为一个临时文件...", 'en': 'Novel Mode Step 2: Merging all PDF files into a single temporary file...', 'ja': '小説モードステップ2：PDFを一つに統合...'}, 
-    'novel_step3_convert_to_epub': {'zh': "小说模式第三步：使用Calibre将合并后的PDF转换为临时EPUB...", 'en': 'Novel Mode Step 3: Converting merged PDF to temporary EPUB using Calibre...', 'ja': '小説モードステップ3：統合PDFをEPUBに変換...'}, 
+    'novel_mode_intro': {'zh': "已选择小说模式。将自动检测是否可用智能合并(TXT/EPUB)，否则使用通用PDF转换流程。", 'en': "Novel mode selected. Will auto-detect Smart Merge (TXT/EPUB) or fallback to PDF flow.", 'ja': "小説モードが選択されました。スマート結合(TXT/EPUB)を自動検出し、それ以外の場合はPDFフローを使用します。"},
+    'novel_step1_convert_to_pdf': {'zh': "小说模式第一步：使用Calibre将所有源文件转换为PDF格式...", 'en': "Novel Mode Step 1: Converting all source files to PDF using Calibre...", 'ja': "小説モードステップ1：CalibreでPDFに変換..."}, 
+    'novel_step1_skip_convert': {'zh': "小说模式第一步：检测到源文件已是PDF，跳过转换步骤。", 'en': "Novel Mode Step 1: Source files are already PDF, skipping conversion.", 'ja': "小説モードステップ1：PDFのため、変換をスキップ。"}, 
+    'novel_step2_merge_pdf': {'zh': "小说模式第二步：合并所有PDF文件为一个临时文件...", 'en': "Novel Mode Step 2: Merging all PDF files into a single temporary file...", 'ja': "小説モードステップ2：PDFを一つに統合..."}, 
+    'novel_step3_convert_to_epub': {'zh': "小说模式第三步：使用Calibre将合并后的PDF转换为临时EPUB...", 'en': "Novel Mode Step 3: Converting merged PDF to temporary EPUB using Calibre...", 'ja': "小説モードステップ3：統合PDFをEPUBに変換..."},
     'calibre_conversion_failed_drm': {'zh': "错误：文件 '{}' 转换失败。\n该文件可能有DRM保护，我们无法处理这个步骤，请获取到无DRM保护的版本！", 'en': "Error: Conversion failed for '{}'. The file may be DRM-protected.", 'ja': "エラー：'{}'の変換に失敗しました。DRM保護されている可能性があります。"},
     'pdf_merge_success': {'zh': "PDF合并完成，已生成 '{}'", 'en': "PDF merge complete: '{}'", 'ja': "PDF統合完了: '{}'"},
     'pdf_merge_fail': {'zh': "PDF合并失败: {}", 'en': "PDF merge failed: {}", 'ja': "PDF統合失敗: {}"},
@@ -185,7 +178,7 @@ Kindle形式 ---
         'ja': "ファイル「{}」の変換に失敗しました。アクションを選択してください (r = 再試行, s = スキップ, a = 中止): "
     },
     'prompt_specify_calibre_path': {'zh': "在您的系统中找不到Calibre。是否要指定一个自定义的Calibre安装路径? (y/n):", 'en': "Calibre not found on your system. Would you like to specify a custom path to your Calibre installation? (y/n):", 'ja': "システムにCalibreが見つかりません。カスタムのCalibreインストールパスを指定しますか？ (y/n):"},
-    'prompt_enter_calibre_path': {'zh': "请输入您的Calibre安装文件夹的完整路径 (例如: C:\\Program Files\\Calibre2):", 'en': "Please enter the full path to your Calibre installation folder (e.g., C:\\Program Files\\Calibre2):", 'ja': "Calibreインストールフォルダへのフルパスを入力してください（例：C:\\Program Files\\Calibre2）："},
+    'prompt_enter_calibre_path': {'zh': "请输入您的Calibre安装文件夹的完整路径 (例如: C:\Program Files\Calibre2):", 'en': "Please enter the full path to your Calibre installation folder (e.g., C:\Program Files\Calibre2):", 'ja': "Calibreインストールフォルダへのフルパスを入力してください（例：C:\Program Files\Calibre2）："},
     'warn_custom_path_set': {'zh': "警告：指定自定义路径后，脚本将始终使用此路径，自动搜索功能将失效。如果与他人分享此脚本，他们可能需要修改此路径。\n路径已成功验证并保存。请重新启动脚本以使更改生效。", 'en': "Warning: After setting a custom path, the script will always use it, and the auto-search feature will be disabled. If you share this script, others may need to change this path.\nThe path has been successfully validated and saved. Please restart the script for the changes to take effect.", 'ja': "警告：カスタムパスを設定すると、スクリプトは常にこのパスを使用し、自動検索機能は無効になります。このスクリプトを他の人と共有する場合、彼らはこのパスを変更する必要があるかもしれません。\nパスは正常に検証され、保存されました。変更を有効にするためにスクリプトを再起動してください。"},
     'error_invalid_calibre_path': {'zh': "错误：提供的路径无效或在该路径下找不到Calibre工具 '{}'。请重试。", 'en': "Error: The provided path is invalid or the Calibre tool '{}' was not found in that path. Please try again.", 'ja': "エラー：指定されたパスが無効か、そのパスにCalibreツール「{}」が見つかりませんでした。再試行してください。"},
     'prompt_cover_auto': {'zh': "是否自动使用第一本书的第一张图片作为封面？ (y = 自动, n = 手动指定): ", 'en': "Use the first image of the first book as the cover? (y = Auto, n = Manual): ", 'ja': "最初の本の最初の画像をカバーとして使用しますか？ (y = 自動, n = 手動): "},
@@ -199,7 +192,7 @@ Kindle形式 ---
     'smart_merge_fail': {'zh': "智能合并失败：{}", 'en': "Smart merge failed: {}", 'ja': "スマート結合に失敗しました：{}"},
     'conversion_fail_single': {'zh': "转换失败 {}: {}", 'en': "Conversion failed {}: {}", 'ja': "変換に失敗しました {}: {}"},
     'dependency_check_title': {'zh': "\n--- 依赖库检查 (Dependency Check) ---", 'en': "\n--- Dependency Check ---", 'ja': "\n--- 依存関係チェック ---"},
-    'separator': {'zh': "-" * 20, 'en': "-" * 20, 'ja': "-" * 20},
+    'separator': {'zh': "--------------------", 'en': "--------------------", 'ja': "--------------------"},
     'error_update_path_placeholder': {'zh': "错误：无法在脚本中找到更新路径的占位符。", 'en': "Error: Could not find the placeholder to update the path in the script.", 'ja': "エラー：スクリプト内でパスを更新するためのプレースホルダーが見つかりませんでした。"},
     'auto_download_windows_only': {'zh': "自动下载目前仅支持Windows系统。", 'en': "Automatic download is currently only supported for Windows.", 'ja': "自動ダウンロードは現在Windowsのみをサポートしています。"},
     'error_corrupt_file_skip': {'zh': "跳过损坏的文件 {}: {}", 'en': "Skipping corrupt file {}: {}", 'ja': "破損したファイル {}: {} をスキップしています"},
@@ -278,6 +271,30 @@ Kindle形式 ---
     }
 }
 
+def getSakuraConfigPath():
+    try:
+        script_dir = os.path.dirname(__file__)
+    except NameError:
+        script_dir = os.getcwd()
+    return os.path.join(script_dir, "config.json")
+
+def loadSakuraConfig():
+    try:
+        configPath = getSakuraConfigPath()
+        if os.path.exists(configPath):
+            with open(configPath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception: pass
+    return {}
+
+def saveSakuraConfig(key, value):
+    config = loadSakuraConfig()
+    config[key] = value
+    try:
+        with open(getSakuraConfigPath(), 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+    except Exception: pass
+
 def checkDependencies():
     global elysiaFitz, edenImage, griseoEpub, mobiusEbookLib, kevinConcurrent, aponiaRequests, villVTqdm, kalpasNatsort
     missingPardofelisDeps = []
@@ -323,21 +340,21 @@ def checkDependencies():
 def getLatestCalibrePortableUrl(languageCode):
     return "https://download.calibre-ebook.com/8.9.0/calibre-portable-installer-8.9.0.exe"
 
-
 def getCalibreToolPath(toolName):
-    if kiana_custom_calibre_path and os.path.isdir(kiana_custom_calibre_path):
-        custom_tool_path = os.path.join(kiana_custom_calibre_path, toolName)
+    config = loadSakuraConfig()
+    custom_path = config.get('calibre_path')
+    if custom_path and os.path.isdir(custom_path):
+        custom_tool_path = os.path.join(custom_path, toolName)
         if os.path.exists(custom_tool_path):
             return custom_tool_path
 
     try:
-        sakuraScriptDirectory = os.path.dirname(__file__)
-    except NameError: 
-        sakuraScriptDirectory = os.getcwd()
+        script_dir = os.path.dirname(__file__)
+    except NameError:
+        script_dir = os.getcwd()
 
     if platform.system() == "Windows":
-        portableBaseLibraryPath = os.path.join(sakuraScriptDirectory, 'lib', 'Calibre Portable')
-        
+        portableBaseLibraryPath = os.path.join(script_dir, 'lib', 'Calibre Portable')
         possiblePaths = [
             os.path.join(portableBaseLibraryPath, 'Calibre Portable', 'app', toolName),
             os.path.join(portableBaseLibraryPath, 'app', toolName),
@@ -345,33 +362,27 @@ def getCalibreToolPath(toolName):
             os.path.join(portableBaseLibraryPath, toolName)
         ]
         for path in possiblePaths:
-            if os.path.exists(path):
-                return path
+            if os.path.exists(path): return path
 
         systemPaths = [
             os.path.join("C:\\Program Files\\Calibre2", toolName),
             os.path.join("C:\\Program Files\\Calibre", toolName)
         ]
         for path in systemPaths:
-            if os.path.exists(path):
-                return path
+            if os.path.exists(path): return path
     else:
         whichCommand = shutil.which
-        if whichCommand(toolName):
-            return whichCommand(toolName)
+        if whichCommand(toolName): return whichCommand(toolName)
     return None
 
 def downloadCalibre(languageCode):
     mobiusDownloadUrl = getLatestCalibrePortableUrl(languageCode)
-    if not mobiusDownloadUrl:
-        return None
-    
+    if not mobiusDownloadUrl: return None
     try:
         script_dir = os.path.dirname(__file__)
-    except NameError: 
+    except NameError:
         script_dir = os.getcwd()
     installerPath = os.path.join(script_dir, "calibre_portable_installer.exe")
-        
     try:
         print(STRINGS['calibre_downloading'][languageCode])
         aponiaResponse = aponiaRequests.get(mobiusDownloadUrl, stream=True)
@@ -387,24 +398,17 @@ def downloadCalibre(languageCode):
 
 def setupCalibreLocally(languageCode):
     installerPath = downloadCalibre(languageCode)
-    if not installerPath:
-        return False
-    
+    if not installerPath: return False
     try:
         script_dir = os.path.dirname(__file__)
-    except NameError: 
+    except NameError:
         script_dir = os.getcwd()
     installDirectory = os.path.join(script_dir, 'lib', 'Calibre Portable')
-
     os.makedirs(installDirectory, exist_ok=True)
-    
     print(STRINGS['calibre_extracting'][languageCode].format(installDirectory))
-    
     command = [installerPath, '/S', f'/D={installDirectory}']
-    
     try:
-        processResult = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
-        
+        subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         if getCalibreToolPath('ebook-convert.exe'):
             print(STRINGS['calibre_ready'][languageCode])
             return True
@@ -418,61 +422,28 @@ def setupCalibreLocally(languageCode):
         print(STRINGS['error_generic'][languageCode].format(error))
         return False
     finally:
-        if os.path.exists(installerPath):
-            os.remove(installerPath)
+        if os.path.exists(installerPath): os.remove(installerPath)
 
 def ensureCalibreTool(toolName, languageCode, isInteractive=True):
     toolPath = getCalibreToolPath(toolName)
     if toolPath:
-        if isInteractive:
-            print(STRINGS['calibre_ready'][languageCode])
+        if isInteractive: print(STRINGS['calibre_ready'][languageCode])
         return toolPath
     
     if isInteractive:
         print(STRINGS['calibre_needed'][languageCode])
-
         while True:
             userChoice = input(STRINGS['prompt_specify_calibre_path'][languageCode]).strip().lower()
             if userChoice in ['y', 'yes']:
                 customPath = input(STRINGS['prompt_enter_calibre_path'][languageCode]).strip().replace('"', '')
-                
                 if os.path.isdir(customPath) and os.path.exists(os.path.join(customPath, toolName)):
-                    try:
-                        try:
-                            script_path = os.path.abspath(__file__)
-                        except NameError:
-                            script_path = os.path.abspath(sys.argv[0])
-                        
-                        with open(script_path, 'r', encoding='utf-8') as f:
-                            script_content = f.read()
-                        
-                        escaped_path = repr(customPath)
-                        
-                        new_content = re.sub(
-                            r"kiana_custom_calibre_path = None",
-                            f"kiana_custom_calibre_path = {escaped_path}",
-                            script_content,
-                            count=1
-                        )
-                        
-                        if new_content != script_content:
-                            with open(script_path, 'w', encoding='utf-8') as f:
-                                f.write(new_content)
-                            print(STRINGS['warn_custom_path_set'][languageCode])
-                            sys.exit(0)
-                        else:
-                            print(STRINGS['error_update_path_placeholder'][languageCode])
-                            return None
-                    except Exception as e:
-                        print(STRINGS['pre_convert_error'][languageCode].format(e))
-                        return None
+                    saveSakuraConfig('calibre_path', customPath)
+                    print(STRINGS['warn_custom_path_set'][languageCode])
+                    return os.path.join(customPath, toolName)
                 else:
                     print(STRINGS['error_invalid_calibre_path'][languageCode].format(toolName))
-            
-            elif userChoice in ['n', 'no']:
-                break
-            else:
-                print(STRINGS['error_invalid_choice'][languageCode])
+            elif userChoice in ['n', 'no']: break
+            else: print(STRINGS['error_invalid_choice'][languageCode])
 
         print(STRINGS['calibre_tool_missing_specific'][languageCode].format(toolName))
         while True:
@@ -487,12 +458,8 @@ def ensureCalibreTool(toolName, languageCode, isInteractive=True):
                     print(STRINGS['auto_download_windows_only'][languageCode])
                     return None
                 setupSuccess = setupCalibreLocally(languageCode)
-                if setupSuccess:
-                    return getCalibreToolPath(toolName)
-                else:
-                    return None
-            else:
-                print(STRINGS['error_invalid_choice'][languageCode])
+                return getCalibreToolPath(toolName) if setupSuccess else None
+            else: print(STRINGS['error_invalid_choice'][languageCode])
     else: 
         print(STRINGS['calibre_needed_param_mode'][languageCode])
         return None
@@ -571,7 +538,6 @@ def processZipImageWorker(workerArguments):
     try:
         with zipfile.ZipFile(zipPath, 'r') as z:
             imageData = z.read(internalPath)
-        
         imageObject = edenImage.open(io.BytesIO(imageData))
         if imageObject.mode in ("P", "RGBA"): imageObject = imageObject.convert("RGB")
         imageBuffer = io.BytesIO()
@@ -580,55 +546,11 @@ def processZipImageWorker(workerArguments):
     except Exception as error:
         return {'index': pageIndex, 'error': str(error)}
 
-def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None, imageFormat='jpeg', input_files=None):
-    if input_files:
-        print(STRINGS['consolidating'][languageCode].format(len(input_files), 'PDF'))
-        pdfFiles = input_files
-    else:
-        print(STRINGS['consolidating'][languageCode].format(len(os.listdir(sourceDirectory)), 'PDF'))
-        pdfFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.pdf')])
-    
-    tasks, pageCounter = [], 0
-    chapterInfo = [] 
-    
-    BATCH_SIZE = 10 
-
-    for path in pdfFiles:
-        baseName = os.path.splitext(os.path.basename(path))[0]
-        numMatch = re.search(r"(\d+(?:\.\d+)?)", baseName)
-        
-        sideKeywords = ['番外', 'extra', 'omake', 'side story', 'sp', 'special']
-        isSideStory = any(k in baseName.lower() for k in sideKeywords)
-
-        if languageCode == 'ja':
-            prefix, suffix, extraTag = "第", "話", "[番外編]"
-        elif languageCode == 'en':
-            prefix, suffix, extraTag = "Chapter ", "", "[Extra] "
-        else:
-            prefix, suffix, extraTag = "第", "话", "[番外]"
-
-        if isSideStory:
-            title = f"{extraTag}{prefix}{numMatch.group(1)}{suffix}" if numMatch else f"{extraTag}{baseName}"
-        else:
-            title = f"{prefix}{numMatch.group(1)}{suffix}" if numMatch else baseName
-        
-        startIndex = pageCounter
-        try:
-            with elysiaFitz.open(path) as doc:
-                pageCount = len(doc)
-                if pageCount > 0:
-                     chapterInfo.append((startIndex, title))
-                     for i in range(0, pageCount, BATCH_SIZE):
-                        chunk = range(i, min(i + BATCH_SIZE, pageCount))
-                        tasks.append((path, chunk, imageQuality, pageCounter, imageFormat))
-                        pageCounter += len(chunk)
-        except Exception as error: 
-            print(STRINGS['error_corrupt_file_skip'][languageCode].format(path, error))
-
+def executeAndWriteImageEpub(outputFilePath, bookTitle, languageCode, workerCount, tasks, workerFunc, totalItems, coverPath, firstPageData=None, chapterInfo=None):
     if not tasks:
-        raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'PDF'))
+        raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format("Source", 'images'))
     
-    print(STRINGS['preparing_pages'][languageCode].format(pageCounter))
+    print(STRINGS['preparing_pages'][languageCode].format(totalItems))
     
     griseoEpubBook = griseoEpub.EpubBook()
     griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}')
@@ -642,8 +564,6 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     griseoEpubBook.spine = ['nav']
     
     processedResults, nextToWriteIndex = {}, 0
-    firstPageData = None
-
     runningFutures = set()
     tasksIter = iter(tasks)
 
@@ -651,77 +571,115 @@ def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
         for _ in range(min(workerCount * 2, len(tasks))):
             try:
                 task = next(tasksIter)
-                future = executor.submit(processPdfBatchWorker, task)
+                future = executor.submit(workerFunc, task)
                 runningFutures.add(future)
-            except StopIteration:
-                break
+            except StopIteration: break
 
-        with villVTqdm(total=pageCounter, desc=STRINGS['processing_and_writing'][languageCode].format(workerCount, '','')) as pbar:
+        with villVTqdm(total=totalItems, desc=STRINGS['processing_and_writing'][languageCode].format(workerCount, '','')) as pbar:
             while runningFutures:
                 finishedFutures, pendingFutures = kevinConcurrent.wait(runningFutures, return_when=kevinConcurrent.FIRST_COMPLETED)
                 runningFutures = pendingFutures
                 
                 for future in finishedFutures:
-                    results = future.result()
+                    res = future.result()
+                    resultsList = res if isinstance(res, list) else [res]
                     
-                    for result in results:
+                    for result in resultsList:
                         pbar.update(1)
                         processedResults[result['index']] = result
-                    
                         if result['index'] == 0 and not result.get('error') and result.get('data'):
                             firstPageData = result['data']
 
-                    try:
-                        nextTask = next(tasksIter)
-                        newFuture = executor.submit(processPdfBatchWorker, nextTask)
-                        runningFutures.add(newFuture)
-                    except StopIteration:
-                        pass
+                        try:
+                            nextTask = next(tasksIter)
+                            newFuture = executor.submit(workerFunc, nextTask)
+                            runningFutures.add(newFuture)
+                        except StopIteration: pass
 
-                    while nextToWriteIndex in processedResults:
-                        currentResult = processedResults.pop(nextToWriteIndex)
-                        if 'error' not in currentResult and currentResult['data']:
-                            index, data = currentResult['index'], currentResult['data']
-                            
-                            ext = imageFormat
-                            mediaType = f"image/{imageFormat}"
-                            imageFileName = f"images/img_{index+1:04d}.{ext}"
-                            chapterTitle = f"Page {index+1}"
-                            
-                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{index+1}", file_name=imageFileName, media_type=mediaType, content=data)
-                            griseoEpubBook.add_item(epubImageItem)
-                            
-                            chapterFileName = f"pages/p_{index+1:04d}.xhtml"
-                            epubHtmlChapter = griseoEpub.EpubHtml(title=chapterTitle, file_name=chapterFileName, lang=languageCode)
-                            epubHtmlChapter.content = f'<!DOCTYPE html><html><head><title>{chapterTitle}</title><link rel="stylesheet" type="text/css" href="../style/main.css" /></head><body><div><img src="../{imageFileName}" alt="{chapterTitle}"/></div></body></html>'
-                            griseoEpubBook.add_item(epubHtmlChapter)
-                            griseoEpubBook.spine.append(epubHtmlChapter)
-                        nextToWriteIndex += 1
-                        if nextToWriteIndex % 20 == 0: gc.collect()
-    
+                        while nextToWriteIndex in processedResults:
+                            currentResult = processedResults.pop(nextToWriteIndex)
+                            if 'error' not in currentResult and currentResult['data']:
+                                index, data = currentResult['index'], currentResult['data']
+                                
+                                ext = 'jpeg' 
+                                mediaType = f"image/{ext}"
+                                imageFileName = f"images/img_{index+1:04d}.{ext}"
+                                chapterTitle = f"Page {index+1}"
+                                
+                                epubImageItem = griseoEpub.EpubItem(uid=f"img_{index+1}", file_name=imageFileName, media_type=mediaType, content=data)
+                                griseoEpubBook.add_item(epubImageItem)
+                                
+                                chapterFileName = f"pages/p_{index+1:04d}.xhtml"
+                                epubHtmlChapter = griseoEpub.EpubHtml(title=chapterTitle, file_name=chapterFileName, lang=languageCode)
+                                epubHtmlChapter.content = f'<!DOCTYPE html><html><head><title>{chapterTitle}</title><link rel="stylesheet" type="text/css" href="../style/main.css" /></head><body><div><img src="../{imageFileName}" alt="{chapterTitle}"/></div></body></html>'
+                                griseoEpubBook.add_item(epubHtmlChapter)
+                                griseoEpubBook.spine.append(epubHtmlChapter)
+                            nextToWriteIndex += 1
+                            if nextToWriteIndex % 20 == 0: gc.collect()
+
     if coverPath == 'auto' and firstPageData:
         griseoEpubBook.set_cover("cover.jpg", firstPageData)
     elif coverPath and coverPath != 'auto' and os.path.exists(coverPath):
         try:
-            with open(coverPath, 'rb') as f:
-                griseoEpubBook.set_cover("cover.jpg", f.read())
+            with open(coverPath, 'rb') as f: griseoEpubBook.set_cover("cover.jpg", f.read())
         except Exception: pass
 
     print(STRINGS['finalizing_file'][languageCode])
     
     tocLinks = []
-    
-    for startIndex, title in chapterInfo:
-        finalIndex = startIndex
-        if finalIndex >= 0:
-            chapterFileName = f"pages/p_{finalIndex+1:04d}.xhtml"
-            tocLinks.append(griseoEpub.Link(chapterFileName, title, f"chap_{finalIndex+1}"))
+    if chapterInfo:
+        for startIndex, title in chapterInfo:
+            finalIndex = startIndex
+            if finalIndex >= 0:
+                chapterFileName = f"pages/p_{finalIndex+1:04d}.xhtml"
+                tocLinks.append(griseoEpub.Link(chapterFileName, title, f"chap_{finalIndex+1}"))
             
     griseoEpubBook.toc = tocLinks
     griseoEpubBook.add_item(griseoEpub.EpubNcx())
     griseoEpubBook.add_item(griseoEpub.EpubNav())
     griseoEpub.write_epub(outputFilePath, griseoEpubBook, {})
     print(STRINGS['consolidation_complete'][languageCode])
+
+def convertPdfsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None, imageFormat='jpeg', input_files=None):
+    if input_files:
+        print(STRINGS['consolidating'][languageCode].format(len(input_files), 'PDF'))
+        pdfFiles = input_files
+    else:
+        print(STRINGS['consolidating'][languageCode].format(len(os.listdir(sourceDirectory)), 'PDF'))
+        pdfFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.pdf')])
+    
+    tasks, pageCounter = [], 0
+    chapterInfo = [] 
+    BATCH_SIZE = 10 
+
+    for path in pdfFiles:
+        baseName = os.path.splitext(os.path.basename(path))[0]
+        numMatch = re.search(r"(\d+(?:\.\d+)?)", baseName)
+        
+        sideKeywords = ['番外', 'extra', 'omake', 'side story', 'sp', 'special']
+        isSideStory = any(k in baseName.lower() for k in sideKeywords)
+
+        if languageCode == 'ja': prefix, suffix, extraTag = "第", "话", "[番外編]"
+        elif languageCode == 'en': prefix, suffix, extraTag = "Chapter ", "", "[Extra] "
+        else: prefix, suffix, extraTag = "第", "话", "[番外]"
+
+        if isSideStory: title = f"{extraTag}{prefix}{numMatch.group(1)}{suffix}" if numMatch else f"{extraTag}{baseName}"
+        else: title = f"{prefix}{numMatch.group(1)}{suffix}" if numMatch else baseName
+        
+        startIndex = pageCounter
+        try:
+            with elysiaFitz.open(path) as doc:
+                pageCount = len(doc)
+                if pageCount > 0:
+                     chapterInfo.append((startIndex, title))
+                     for i in range(0, pageCount, BATCH_SIZE):
+                        chunk = range(i, min(i + BATCH_SIZE, pageCount))
+                        tasks.append((path, chunk, imageQuality, pageCounter, imageFormat))
+                        pageCounter += len(chunk)
+        except Exception as error: 
+            print(STRINGS['error_corrupt_file_skip'][languageCode].format(path, error))
+            
+    executeAndWriteImageEpub(outputFilePath, bookTitle, languageCode, workerCount, tasks, processPdfBatchWorker, pageCounter, coverPath, chapterInfo=chapterInfo)
 
 def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, languageCode, workerCount, coverPath=None, imageFormat='jpeg', input_files=None):
     if input_files:
@@ -730,13 +688,6 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     else:
         print(STRINGS['consolidating'][languageCode].format(len(os.listdir(sourceDirectory)), 'CBZ/CBR'))
         cbzFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith(('.cbz', '.cbr'))])
-    if not cbzFiles:
-        raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'CBZ/CBR'))
-    
-    griseoEpubBook = griseoEpub.EpubBook()
-    griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}'); griseoEpubBook.set_title(bookTitle); griseoEpubBook.set_language(languageCode); griseoEpubBook.add_author('File Converter')
-    griseoEpubBook.add_metadata('DC', 'description', "本电子书使用https://github.com/ShadowLoveElysia/Bulk-Ebook-Merger-Converter项目进行辅助合成/处理，本项目完全开源免费，若您是付费获取的此电子书/软件，请向平台举报！")
-    styleSheet = griseoEpub.EpubItem(uid="main_style", file_name="style/main.css", media_type="text/css", content='body{text-align:center;}img{max-width:100%;height:auto;}'); griseoEpubBook.add_item(styleSheet); griseoEpubBook.spine = ['nav']
     
     tasks = []
     chapterInfo = [] 
@@ -745,21 +696,15 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
     for cbzPath in cbzFiles:
         baseName = os.path.splitext(os.path.basename(cbzPath))[0]
         numMatch = re.search(r"(\d+(?:\.\d+)?)", baseName)
-        
         sideKeywords = ['番外', 'extra', 'omake', 'side story', 'sp', 'special']
         isSideStory = any(k in baseName.lower() for k in sideKeywords)
 
-        if languageCode == 'ja':
-            prefix, suffix, extraTag = "第", "話", "[番外編]"
-        elif languageCode == 'en':
-            prefix, suffix, extraTag = "Chapter ", "", "[Extra] "
-        else:
-            prefix, suffix, extraTag = "第", "话", "[番外]"
+        if languageCode == 'ja': prefix, suffix, extraTag = "第", "话", "[番外編]"
+        elif languageCode == 'en': prefix, suffix, extraTag = "Chapter ", "", "[Extra] "
+        else: prefix, suffix, extraTag = "第", "话", "[番外]"
 
-        if isSideStory:
-            title = f"{extraTag}{prefix}{numMatch.group(1)}{suffix}" if numMatch else f"{extraTag}{baseName}"
-        else:
-            title = f"{prefix}{numMatch.group(1)}{suffix}" if numMatch else baseName
+        if isSideStory: title = f"{extraTag}{prefix}{numMatch.group(1)}{suffix}" if numMatch else f"{extraTag}{baseName}"
+        else: title = f"{prefix}{numMatch.group(1)}{suffix}" if numMatch else baseName
         
         try:
             with zipfile.ZipFile(cbzPath, 'r') as zipFileHandle:
@@ -771,105 +716,21 @@ def convertCbzsToEpub(sourceDirectory, outputFilePath, imageQuality, bookTitle, 
                         currentIndex += 1
         except zipfile.BadZipFile: pass
     
-    if not tasks: raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'images'))
-    print(STRINGS['preparing_pages'][languageCode].format(len(tasks)))
-    
-    processedResults, nextToWriteIndex = {}, 0
-    firstPageData = None
-
-    runningFutures = set()
-    tasksIter = iter(tasks)
-    
-    with kevinConcurrent.ProcessPoolExecutor(max_workers=workerCount) as executor:
-        for _ in range(min(workerCount * 2, len(tasks))):
-            try:
-                task = next(tasksIter)
-                future = executor.submit(processZipImageWorker, task)
-                runningFutures.add(future)
-            except StopIteration:
-                break
-        
-        with villVTqdm(total=len(tasks), desc=STRINGS['processing_and_writing'][languageCode].format(workerCount, '', '')) as pbar:
-            while runningFutures:
-                finishedFutures, pendingFutures = kevinConcurrent.wait(runningFutures, return_when=kevinConcurrent.FIRST_COMPLETED)
-                runningFutures = pendingFutures
-                
-                for future in finishedFutures:
-                    pbar.update(1)
-                    result = future.result()
-                    processedResults[result['index']] = result
-                    
-                    if result['index'] == 0 and not result.get('error') and result.get('data'):
-                        firstPageData = result['data']
-                    
-                    try:
-                        nextTask = next(tasksIter)
-                        newFuture = executor.submit(processZipImageWorker, nextTask)
-                        runningFutures.add(newFuture)
-                    except StopIteration:
-                        pass
-
-                    while nextToWriteIndex in processedResults:
-                        currentResult = processedResults.pop(nextToWriteIndex)
-                        if 'error' not in currentResult and currentResult['data']:
-                            index, data = currentResult['index'], currentResult['data']
-                            
-                            ext = imageFormat
-                            mediaType = f"image/{imageFormat}"
-                            imageFileName = f"images/img_{index+1:04d}.{ext}"
-                            chapterTitle = f"Page {index+1}"
-                            
-                            epubImageItem = griseoEpub.EpubItem(uid=f"img_{index+1}", file_name=imageFileName, media_type=mediaType, content=data)
-                            griseoEpubBook.add_item(epubImageItem)
-                            chapterFileName = f"pages/p_{index+1:04d}.xhtml"
-                            epubHtmlChapter = griseoEpub.EpubHtml(title=chapterTitle, file_name=chapterFileName, lang=languageCode)
-                            epubHtmlChapter.content = f'<!DOCTYPE html><html><head><title>{chapterTitle}</title><link rel="stylesheet" type="text/css" href="../style/main.css" /></head><body><div><img src="../{imageFileName}" alt="{chapterTitle}"/></div></body></html>'
-                            griseoEpubBook.add_item(epubHtmlChapter)
-                            griseoEpubBook.spine.append(epubHtmlChapter)
-                        nextToWriteIndex += 1
-                        if nextToWriteIndex % 20 == 0: gc.collect()
-    
-    if coverPath == 'auto' and firstPageData:
-        griseoEpubBook.set_cover("cover.jpg", firstPageData)
-    elif coverPath and coverPath != 'auto' and os.path.exists(coverPath):
-        try:
-            with open(coverPath, 'rb') as f: griseoEpubBook.set_cover("cover.jpg", f.read())
-        except Exception: pass
-
-    print(STRINGS['finalizing_file'][languageCode])
-    
-    tocLinks = []
-    
-    for startIndex, title in chapterInfo:
-        finalIndex = startIndex
-        if finalIndex >= 0:
-            chapterFileName = f"pages/p_{finalIndex+1:04d}.xhtml"
-            tocLinks.append(griseoEpub.Link(chapterFileName, title, f"chap_{finalIndex+1}"))
-    
-    griseoEpubBook.toc = tocLinks
-    griseoEpubBook.add_item(griseoEpub.EpubNcx()); griseoEpubBook.add_item(griseoEpub.EpubNav())
-    griseoEpub.write_epub(outputFilePath, griseoEpubBook, {})
-    print(STRINGS['consolidation_complete'][languageCode])
+    executeAndWriteImageEpub(outputFilePath, bookTitle, languageCode, workerCount, tasks, processZipImageWorker, currentIndex, coverPath, chapterInfo=chapterInfo)
 
 def mergeEpubsWithCalibre(sourceDirectory, outputFilePath, bookTitle, languageCode, coverPath=None, calibre_extra_args=None, input_files=None):
     print(STRINGS['epub_merge_notice_calibre'][languageCode])
-    
     calibreExecutable = ensureCalibreTool('ebook-convert.exe', languageCode, isInteractive=True)
-    if not calibreExecutable:
-        return False, 0, False
+    if not calibreExecutable: return False, 0, False
 
-    if input_files:
-        epubFiles = input_files
-    else:
-        epubFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.epub')])
-    if not epubFiles:
-        raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'EPUB'))
+    if input_files: epubFiles = input_files
+    else: epubFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.epub')])
+    if not epubFiles: raise FileNotFoundError(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'EPUB'))
     
     print(f"{STRINGS['consolidating'][languageCode].format(len(epubFiles), 'EPUB')}... ", end="", flush=True)
 
     command = [calibreExecutable] + epubFiles + [outputFilePath]
-    if bookTitle:
-        command.extend(['--title', bookTitle])
+    if bookTitle: command.extend(['--title', bookTitle])
     
     if coverPath and coverPath != 'auto' and os.path.exists(coverPath):
          command.extend(['--cover', coverPath])
@@ -878,17 +739,15 @@ def mergeEpubsWithCalibre(sourceDirectory, outputFilePath, bookTitle, languageCo
         if first_epub_cover_data:
             cover_file_path = os.path.join(os.path.dirname(outputFilePath), "temp_cover.jpg")
             try:
-                with open(cover_file_path, "wb") as f:
-                    f.write(first_epub_cover_data)
+                with open(cover_file_path, "wb") as f: f.write(first_epub_cover_data)
                 command.extend(['--cover', cover_file_path])
             except: pass
 
-    if calibre_extra_args:
-        command.extend(calibre_extra_args)
+    if calibre_extra_args: command.extend(calibre_extra_args)
 
     start_time = time.time()
     try:
-        processResult = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         duration = time.time() - start_time
         print(STRINGS['calibre_conversion_timed'][languageCode].format(duration))
         print(STRINGS['consolidation_complete'][languageCode])
@@ -900,8 +759,7 @@ def mergeEpubsWithCalibre(sourceDirectory, outputFilePath, bookTitle, languageCo
         print(f"\n{STRINGS['epub_merge_fail_calibre'][languageCode]}: {error}")
         return False, 0, False
     finally:
-        if 'cover_file_path' in locals() and os.path.exists(cover_file_path):
-            os.remove(cover_file_path)
+        if 'cover_file_path' in locals() and os.path.exists(cover_file_path): os.remove(cover_file_path)
 
 def FilesToPdf(sourceDirectory, outputDirectory, languageCode, isInteractive, input_files=None):
     print(STRINGS['novel_step1_convert_to_pdf'][languageCode])
@@ -912,20 +770,14 @@ def FilesToPdf(sourceDirectory, outputDirectory, languageCode, isInteractive, in
                              '.lit', '.lrf', '.pdb', '.pmlz', '.rb', '.rtf', '.tcr', 
                              '.txtz', '.htmlz')
     
-    if input_files:
-        sourceFiles = input_files
-    else:
-        sourceFiles = kalpasNatsort.natsorted([
-            os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) 
-            if f.lower().endswith(supportedExtensions)
-        ])
+    if input_files: sourceFiles = input_files
+    else: sourceFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith(supportedExtensions)])
 
     if not sourceFiles:
         print(STRINGS['no_non_pdf_found'][languageCode])
         return True, 0
 
     os.makedirs(outputDirectory, exist_ok=True)
-    
     total_duration = 0
     files_to_process = list(sourceFiles) 
 
@@ -944,7 +796,6 @@ def FilesToPdf(sourceDirectory, outputDirectory, languageCode, isInteractive, in
                 except subprocess.CalledProcessError as processError:
                     pbar.write(f"\n{STRINGS['calibre_conversion_error'][languageCode]}")
                     pbar.write(f"Calibre Error: {processError.stderr}")
-                    
                     if isInteractive:
                         while True:
                             user_choice = input(STRINGS['prompt_skip_failed_file'][languageCode].format(os.path.basename(sourceFile))).strip().lower()
@@ -952,37 +803,28 @@ def FilesToPdf(sourceDirectory, outputDirectory, languageCode, isInteractive, in
                                 pbar.write("Retrying conversion...")
                                 break 
                             elif user_choice in ['s', 'skip', 'y', 'yes']:
-                                conversion_successful = True # Mark as "successful" to exit the retry loop and skip the file
+                                conversion_successful = True
                                 break
                             elif user_choice in ['a', 'abort', 'n', 'no']:
                                 return False, total_duration
-                            else:
-                                pbar.write(STRINGS['error_invalid_choice'][languageCode])
-                        if user_choice in ['r', 'retry']:
-                            continue # Retry the conversion
-                        else: # Skip
-                            break 
-                    else: # Non-interactive mode
-                        return False, total_duration
+                            else: pbar.write(STRINGS['error_invalid_choice'][languageCode])
+                        if user_choice in ['r', 'retry']: continue 
+                        else: break 
+                    else: return False, total_duration
             pbar.update(1)
-            
     return True, total_duration
 
 def mergePdfs(sourceDirectory, outputFilePath, languageCode, input_files=None):
     print(STRINGS['novel_step2_merge_pdf'][languageCode])
-    if input_files:
-        pdfFiles = input_files
-    else:
-        pdfFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.pdf')])
+    if input_files: pdfFiles = input_files
+    else: pdfFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.pdf')])
     if not pdfFiles:
         print(STRINGS['no_pdf_files_to_merge'][languageCode])
         return False
-    
     try:
         mergedDoc = elysiaFitz.open()
         for path in villVTqdm(pdfFiles, desc="Merging PDFs"):
-            with elysiaFitz.open(path) as doc:
-                mergedDoc.insert_pdf(doc)
+            with elysiaFitz.open(path) as doc: mergedDoc.insert_pdf(doc)
         mergedDoc.save(outputFilePath)
         mergedDoc.close()
         print(STRINGS['pdf_merge_success'][languageCode].format(outputFilePath))
@@ -997,8 +839,7 @@ def convertEpubToCbz(sourceFile, outputFilePath, imageQuality, languageCode, ima
     imageList = []
     
     for item in readEpubBook.get_items():
-        if item.get_type() == mobiusEbookLib.ITEM_IMAGE:
-            imageList.append(item.get_content())
+        if item.get_type() == mobiusEbookLib.ITEM_IMAGE: imageList.append(item.get_content())
 
     if not imageList:
         print(STRINGS['warning_no_images_cbz_epub'][languageCode])
@@ -1011,14 +852,12 @@ def convertEpubToCbz(sourceFile, outputFilePath, imageQuality, languageCode, ima
                 pbar.update(1)
                 try:
                     imageObject = edenImage.open(io.BytesIO(imageData))
-                    if imageObject.mode in ("P", "RGBA"):
-                        imageObject = imageObject.convert("RGB")
+                    if imageObject.mode in ("P", "RGBA"): imageObject = imageObject.convert("RGB")
                     imageBuffer = io.BytesIO()
                     imageObject.save(imageBuffer, format=imageFormat.upper(), quality=imageQuality, optimize=(imageFormat=='jpeg'))
                     zipFileHandle.writestr(f"page_{index:04d}.{imageFormat}", imageBuffer.getvalue())
                 except Exception as error: 
                     print(STRINGS['warning_skip_image_error'][languageCode].format(error))
-
     print(STRINGS['finalizing_file'][languageCode])
     print(STRINGS['task_complete'][languageCode].format(outputFilePath))
 
@@ -1032,20 +871,20 @@ class MyHelpFormatter(argparse.HelpFormatter):
   # [交互模式] 不带参数运行即可进入交互菜单
   python {programName}
 
-  # [漫画模式] 将 "C:\\MyScans" 中的PDF转为图片优先的EPUB和PDF
-  python {programName} -p "C:\\MyScans" -f pdf --mode comic
+  # [漫画模式] 将 \"C:\\MyScans\" 中的PDF转为图片优先的EPUB和PDF
+  python {programName} -p \"C:\\MyScans\" -f pdf --mode comic
   
-  # [小说模式] 将 "D:\\Novels" 中的EPUB文件(文本优先)整合并创建MOBI
-  python {programName} -p "D:\\Novels" -f mobi -o "MyNovel" --mode novel
+  # [小说模式] 将 \"D:\\Novels\" 中的EPUB文件(文本优先)整合并创建MOBI
+  python {programName} -p \"D:\\Novels\" -f mobi -o \"MyNovel\" --mode novel
 
-  # [智能合并] "D:\\Book" 包含多个txt/epub章节，自动识别并合并
-  python {programName} -p "D:\\Book" -f epub --mode novel
+  # [智能合并] \"D:\\Book\" 包含多个txt/epub章节，自动识别并合并
+  python {programName} -p \"D:\\Book\" -f epub --mode novel
 
-  # [多文件夹模式] 分别处理 "C:\\A" 和 "D:\\B"，并将结果都保存到 "E:\\Output"
-  python {programName} -p "C:\\A" "D:\\B" -f epub --mode novel -op "E:\\Output"
+  # [多文件夹模式] 分别处理 \"C:\\A\" 和 \"D:\\B\"，并将结果都保存到 \"E:\\Output\"
+  python {programName} -p \"C:\\A\" \"D:\\B\" -f epub --mode novel -op \"E:\\Output\"
 
-  # 使用数字选择格式, 将 "C:\\Comics" 转为 KEPUB
-  python {programName} -p "C:\\Comics" -f 8 --mode comic
+  # 使用数字选择格式, 将 \"C:\\Comics\" 转为 KEPUB
+  python {programName} -p \"C:\\Comics\" -f 8 --mode comic
 -------------------------------------------------------------------
 """
         return helpText + exampleUsageText
@@ -1086,7 +925,7 @@ def extractCoverFromFirstFile(sourceDirectory):
                 if len(doc) > 0:
                     for img in doc.get_page_images(0):
                         xref = img[0]
-                        return doc.extract_image(xref)["image"]
+                        return doc.extract_image(xref)("image")
         elif firstFile.lower().endswith(('.cbz', '.cbr')):
             with zipfile.ZipFile(firstFile, 'r') as zf:
                 imgFiles = kalpasNatsort.natsorted([f for f in zf.namelist() if f.lower().endswith(('jpg','jpeg','png','webp'))])
@@ -1094,19 +933,15 @@ def extractCoverFromFirstFile(sourceDirectory):
         elif firstFile.lower().endswith('.epub'):
             book = griseoEpub.read_epub(firstFile)
             cover_item = book.get_item_with_id('cover')
-            if cover_item:
-                return cover_item.get_content()
-            for item in book.get_items_of_type(griseoEpub.ITEM_IMAGE):
-                return item.get_content()
+            if cover_item: return cover_item.get_content()
+            for item in book.get_items_of_type(griseoEpub.ITEM_IMAGE): return item.get_content()
     except: return None
     return None
 
 def mergeTxtsToEpubSmart(sourceDirectory, outputFilePath, bookTitle, languageCode, coverPath=None, input_files=None):
     print(STRINGS['smart_merge_txt_start'][languageCode])
-    if input_files:
-        txtFiles = input_files
-    else:
-        txtFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.txt')])
+    if input_files: txtFiles = input_files
+    else: txtFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.txt')])
     if not txtFiles: return False
     griseoEpubBook = griseoEpub.EpubBook()
     griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}')
@@ -1117,12 +952,10 @@ def mergeTxtsToEpubSmart(sourceDirectory, outputFilePath, bookTitle, languageCod
 
     if coverPath == 'auto':
         coverData = extractCoverFromFirstFile(sourceDirectory)
-        if coverData:
-            griseoEpubBook.set_cover("cover.jpg", coverData)
+        if coverData: griseoEpubBook.set_cover("cover.jpg", coverData)
     elif coverPath and coverPath != 'auto' and os.path.exists(coverPath):
         try:
-            with open(coverPath, 'rb') as f:
-                griseoEpubBook.set_cover("cover.jpg", f.read())
+            with open(coverPath, 'rb') as f: griseoEpubBook.set_cover("cover.jpg", f.read())
         except Exception: pass
 
     styleContent = 'body { font-family: "Microsoft YaHei", "SimSun", sans-serif; line-height: 1.6; } p { text-indent: 2em; margin-bottom: 0.5em; }'
@@ -1173,10 +1006,8 @@ def mergeTxtsToEpubSmart(sourceDirectory, outputFilePath, bookTitle, languageCod
 
 def mergeEpubsSmart(sourceDirectory, outputFilePath, bookTitle, languageCode, coverPath=None, input_files=None, flat_merge=False):
     print(STRINGS['smart_merge_epub_start'][languageCode])
-    if input_files:
-        epubFiles = input_files
-    else:
-        epubFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.epub')])
+    if input_files: epubFiles = input_files
+    else: epubFiles = kalpasNatsort.natsorted([os.path.join(sourceDirectory, f) for f in os.listdir(sourceDirectory) if f.lower().endswith('.epub')])
     if not epubFiles: return False
     griseoEpubBook = griseoEpub.EpubBook()
     griseoEpubBook.set_identifier(f'id_{os.path.basename(outputFilePath)}')
@@ -1186,12 +1017,10 @@ def mergeEpubsSmart(sourceDirectory, outputFilePath, bookTitle, languageCode, co
 
     if coverPath == 'auto':
         coverData = extractCoverFromFirstFile(sourceDirectory)
-        if coverData:
-            griseoEpubBook.set_cover("cover.jpg", coverData)
+        if coverData: griseoEpubBook.set_cover("cover.jpg", coverData)
     elif coverPath and coverPath != 'auto' and os.path.exists(coverPath):
         try:
-            with open(coverPath, 'rb') as f:
-                griseoEpubBook.set_cover("cover.jpg", f.read())
+            with open(coverPath, 'rb') as f: griseoEpubBook.set_cover("cover.jpg", f.read())
         except Exception: pass
 
     try:
@@ -1287,7 +1116,7 @@ def mergeEpubsSmart(sourceDirectory, outputFilePath, bookTitle, languageCode, co
                 return processedToc
             if flat_merge:
                 mappedToc = suProcessToc(sourceEpubBook.toc)
-                masterToc.extend(mappedToc) # Directly extend for flattened merge
+                masterToc.extend(mappedToc)
             else:
                 bookSection = griseoEpub.Section(bookTitleClean)
                 mappedToc = suProcessToc(sourceEpubBook.toc)
@@ -1338,34 +1167,25 @@ def runTask(villV_Args):
         counts = {'epub': nativeEbookCount, 'pdf': pdfCount, 'cbz': cbzCount, 'text': calibreRequiredCount}
         if any(count > 0 for count in counts.values()):
             if villV_Args.mode == 'novel':
-                if txtCount > len(masterFileList) * 0.5:
-                     majorType = 'txt_smart'
-                elif nativeEbookCount > 0:
-                    majorType = 'epub_smart'
-                elif calibreRequiredCount > 0:
-                    majorType = 'text' 
-                else:
-                    majorType = max(counts, key=counts.get)
-            else:
-                majorType = max(counts, key=counts.get)
+                if txtCount > len(masterFileList) * 0.5: majorType = 'txt_smart'
+                elif nativeEbookCount > 0: majorType = 'epub_smart'
+                elif calibreRequiredCount > 0: majorType = 'text' 
+                else: majorType = max(counts, key=counts.get)
+            else: majorType = max(counts, key=counts.get)
 
         if majorType == 'none':
             print(STRINGS['error_no_files'][villV_Args.lang].format(sourceDirectory, 'supported files'))
             continue
 
-        if villV_Args.outputpath:
-            outputDirectory = villV_Args.outputpath
+        if villV_Args.outputpath: outputDirectory = villV_Args.outputpath
         else:
             outputDirectory = os.path.dirname(villV_Args.path[0]) if len(villV_Args.path) == 1 and getattr(villV_Args, 'interactive', False) else os.path.dirname(sourceDirectory)
             outputDirectory = outputDirectory or '.'
 
-
         isMultiFolder = len(villV_Args.path) > 1 and not getattr(villV_Args, 'interactive', False)
         if isMultiFolder and (villV_Args.output or villV_Args.title):
-            if villV_Args.output:
-                print(STRINGS['warn_multi_folder_output_ignored'][villV_Args.lang].format(villV_Args.output))
-            if villV_Args.title:
-                print(STRINGS['warn_multi_folder_title_ignored'][villV_Args.lang].format(villV_Args.title))
+            if villV_Args.output: print(STRINGS['warn_multi_folder_output_ignored'][villV_Args.lang].format(villV_Args.output))
+            if villV_Args.title: print(STRINGS['warn_multi_folder_title_ignored'][villV_Args.lang].format(villV_Args.title))
             outputBaseName = os.path.basename(os.path.normpath(sourceDirectory))
             bookTitle = outputBaseName
         else:
@@ -1374,7 +1194,7 @@ def runTask(villV_Args):
 
         edenTempFiles = []
         edenTempDirectories = []
-        intermediateEpubs = [] # For batch processing
+        intermediateEpubs = [] 
         
         calibre_extra_args = []
         if getattr(villV_Args, 'remove_styling', False):
@@ -1382,45 +1202,34 @@ def runTask(villV_Args):
             print(STRINGS['info_css_filter_enabled'][villV_Args.lang])
         
         temp_file_is_clean = False
-
         doBatchProcessing = getattr(villV_Args, 'batch', False)
         batchSize = getattr(villV_Args, 'batch_size', None)
+        if doBatchProcessing and batchSize is None: batchSize = max(1, round(len(masterFileList) / 10))
 
-        if doBatchProcessing and batchSize is None:
-            # Default batch size if --batch is used without --batch-size
-            batchSize = max(1, round(len(masterFileList) / 10))
-
-        currentFileList = masterFileList # This will be chunked if batch processing is enabled
+        currentFileList = masterFileList 
         batches = []
         if doBatchProcessing and batchSize > 0:
             for i in range(0, len(currentFileList), batchSize):
                 batches.append(currentFileList[i:i + batchSize])
-        else:
-            batches.append(currentFileList) # Single batch if no batch processing or invalid batch size
+        else: batches.append(currentFileList) 
 
         try:
             finalTempPath = ""
-            
             for batchIndex, currentBatchFiles in enumerate(batches):
                 currentBatchNum = batchIndex + 1
                 totalBatches = len(batches)
-                
                 if doBatchProcessing:
                     print(STRINGS['batch_processing_info'][villV_Args.lang].format(currentBatchNum, totalBatches, len(currentBatchFiles)))
                     batchTempDir = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_tmp")
                     os.makedirs(batchTempDir, exist_ok=True)
                     edenTempDirectories.append(batchTempDir)
-                    
                     targetSourceDirectory = batchTempDir
-                else:
-                    targetSourceDirectory = sourceDirectory
+                else: targetSourceDirectory = sourceDirectory
 
                 if villV_Args.mode == 'comic':
                     print(STRINGS['comic_mode_major_type'][villV_Args.lang].format(majorType.upper()))
-                    if doBatchProcessing:
-                        tempComicEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_temp.epub")
-                    else:
-                        tempComicEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_temp_comic.epub")
+                    if doBatchProcessing: tempComicEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_temp.epub")
+                    else: tempComicEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_temp_comic.epub")
                     
                     edenTempFiles.append(tempComicEpubPath)
 
@@ -1431,24 +1240,19 @@ def runTask(villV_Args):
                     elif majorType == 'epub' or majorType == 'text':
                         comicPreConvertTempDir = None
                         allEpubsToMerge = []
-                        
                         nonEpubFilesForConversion = []
                         originalEpubFilesInBatch = []
-
                         supportedExtensionsForConversion = ('.mobi', '.azw3', '.docx', '.txt', '.kepub', '.fb2', '.lit', '.lrf', '.pdb', '.pmlz', '.rb', '.rtf', '.tcr', '.txtz', '.htmlz')
 
                         for filePath in currentBatchFiles:
-                            if filePath.lower().endswith('.epub'):
-                                originalEpubFilesInBatch.append(filePath)
-                            elif filePath.lower().endswith(supportedExtensionsForConversion):
-                                nonEpubFilesForConversion.append(filePath)
+                            if filePath.lower().endswith('.epub'): originalEpubFilesInBatch.append(filePath)
+                            elif filePath.lower().endswith(supportedExtensionsForConversion): nonEpubFilesForConversion.append(filePath)
                         
                         if nonEpubFilesForConversion:
                             print(STRINGS['pre_convert_notice'][villV_Args.lang].format(len(nonEpubFilesForConversion)))
                             comicPreConvertTempDir = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_comic_prep_epubs")
                             os.makedirs(comicPreConvertTempDir, exist_ok=True)
                             edenTempDirectories.append(comicPreConvertTempDir)
-
                             huaCalibreExecutable = ensureCalibreTool('ebook-convert.exe', villV_Args.lang, getattr(villV_Args, 'interactive', False))
                             if huaCalibreExecutable:
                                 with villVTqdm(total=len(nonEpubFilesForConversion), desc=STRINGS['pre_convert_progress'][villV_Args.lang]) as pbar:
@@ -1460,8 +1264,7 @@ def runTask(villV_Args):
                                         except Exception as e:
                                             print(STRINGS['conversion_fail_single'][villV_Args.lang].format(os.path.basename(f_path), e))
                                         pbar.update(1)
-                            else:
-                                print(STRINGS['calibre_missing_pre_convert'][villV_Args.lang])
+                            else: print(STRINGS['calibre_missing_pre_convert'][villV_Args.lang])
                         
                         allEpubsToMerge.extend(originalEpubFilesInBatch)
 
@@ -1472,10 +1275,8 @@ def runTask(villV_Args):
                         success, duration, was_cleaned = mergeEpubsWithCalibre(targetSourceDirectory, tempComicEpubPath, bookTitle, villV_Args.lang, villV_Args.cover, calibre_extra_args, input_files=allEpubsToMerge)
                         if success:
                             calibreTimeTotal += duration
-                            if was_cleaned:
-                                temp_file_is_clean = True
-                        else:
-                            continue
+                            if was_cleaned: temp_file_is_clean = True
+                        else: continue
 
                         if comicPreConvertTempDir and os.path.exists(comicPreConvertTempDir):
                             shutil.rmtree(comicPreConvertTempDir)
@@ -1487,25 +1288,19 @@ def runTask(villV_Args):
                         shutil.rmtree(batchTempDir)
                         edenTempDirectories.remove(batchTempDir)
                         gc.collect()
-                    else:
-                        finalTempPath = tempComicEpubPath
+                    else: finalTempPath = tempComicEpubPath
 
                 elif villV_Args.mode == 'novel':
                     print(STRINGS['novel_mode_intro'][villV_Args.lang])
-                    
                     smartMergeSuccess = False
-                    if doBatchProcessing:
-                        tempSmartEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_smart.epub")
-                    else:
-                        tempSmartEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_temp_smart.epub")
+                    if doBatchProcessing: tempSmartEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_batch_{currentBatchNum}_smart.epub")
+                    else: tempSmartEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_temp_smart.epub")
 
                     if majorType == 'txt_smart':
                          if mergeTxtsToEpubSmart(targetSourceDirectory, tempSmartEpubPath, bookTitle, villV_Args.lang, villV_Args.cover, input_files=currentBatchFiles):
                              smartMergeSuccess = True
-                             if doBatchProcessing:
-                                 intermediateEpubs.append(tempSmartEpubPath)
-                             else:
-                                 finalTempPath = tempSmartEpubPath
+                             if doBatchProcessing: intermediateEpubs.append(tempSmartEpubPath)
+                             else: finalTempPath = tempSmartEpubPath
                              edenTempFiles.append(tempSmartEpubPath)
                     
                     if majorType == 'epub_smart':
@@ -1521,7 +1316,6 @@ def runTask(villV_Args):
                                 kalpasTempPrepDir = os.path.join(outputDirectory, f"{outputBaseName}_temp_prep_epubs")
                                 os.makedirs(kalpasTempPrepDir, exist_ok=True)
                                 edenTempDirectories.append(kalpasTempPrepDir)
-                                
                                 huaCalibreExecutable = ensureCalibreTool('ebook-convert.exe', villV_Args.lang, getattr(villV_Args, 'interactive', False))
                                 if huaCalibreExecutable:
                                     with villVTqdm(total=len(suNeedsConversion), desc=STRINGS['pre_convert_progress'][villV_Args.lang]) as pbar:
@@ -1533,8 +1327,7 @@ def runTask(villV_Args):
                                                 print(STRINGS['conversion_fail_single'][villV_Args.lang].format(os.path.basename(f_path), e))
                                             pbar.update(1)
                                     mobiusTargetSourceDir = kalpasTempPrepDir
-                                else:
-                                    print(STRINGS['calibre_missing_pre_convert'][villV_Args.lang])
+                                else: print(STRINGS['calibre_missing_pre_convert'][villV_Args.lang])
                         except Exception as e:
                             print(STRINGS['pre_convert_error'][villV_Args.lang].format(e))
                         
@@ -1543,18 +1336,14 @@ def runTask(villV_Args):
                              prepFiles = kalpasNatsort.natsorted([os.path.join(mobiusTargetSourceDir, f) for f in os.listdir(mobiusTargetSourceDir) if f.lower().endswith('.epub')])
                              currentBatchEpubs = [f for f in currentBatchFiles if f.lower().endswith('.epub')]
                              prepFiles.extend(currentBatchEpubs)
-                        else:
-                             prepFiles = currentBatchFiles
+                        else: prepFiles = currentBatchFiles
 
                         if mergeEpubsSmart(mobiusTargetSourceDir, tempSmartEpubPath, bookTitle, villV_Args.lang, villV_Args.cover, input_files=prepFiles):
                             smartMergeSuccess = True
-                            if doBatchProcessing:
-                                intermediateEpubs.append(tempSmartEpubPath)
-                            else:
-                                finalTempPath = tempSmartEpubPath
+                            if doBatchProcessing: intermediateEpubs.append(tempSmartEpubPath)
+                            else: finalTempPath = tempSmartEpubPath
                             edenTempFiles.append(tempSmartEpubPath)
-                        else:
-                            print(STRINGS['smart_merge_epub_fail_fallback'][villV_Args.lang])
+                        else: print(STRINGS['smart_merge_epub_fail_fallback'][villV_Args.lang])
 
                     if not smartMergeSuccess:
                         tempPdfsDirectory = os.path.join(outputDirectory, f"{outputBaseName}_temp_pdfs_for_merge")
@@ -1562,26 +1351,18 @@ def runTask(villV_Args):
                         tempNovelEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_temp_novel.epub")
                         edenTempDirectories.append(tempPdfsDirectory)
                         edenTempFiles.extend([tempMergedPdfPath, tempNovelEpubPath])
-                        
                         os.makedirs(tempPdfsDirectory, exist_ok=True)
-
                         anyNonPdfFiles = nativeEbookCount > 0 or calibreRequiredCount > 0
-                        
                         if anyNonPdfFiles:
                             success, duration = FilesToPdf(targetSourceDirectory, tempPdfsDirectory, villV_Args.lang, villV_Args.interactive, input_files=currentBatchFiles)
-                            if success:
-                                calibreTimeTotal += duration
-                            else:
-                                continue
-                        else:
-                            print(STRINGS['novel_step1_skip_convert'][villV_Args.lang])
-                        
+                            if success: calibreTimeTotal += duration
+                            else: continue
+                        else: print(STRINGS['novel_step1_skip_convert'][villV_Args.lang])
                         mergePdfs(tempPdfsDirectory, tempMergedPdfPath, villV_Args.lang, input_files=[f for f in currentBatchFiles if f.lower().endswith('.pdf')])
                         
                         print(f"{STRINGS['novel_step3_convert_to_epub'][villV_Args.lang]}... ", end="", flush=True)
                         calibreExecutable = ensureCalibreTool('ebook-convert.exe', villV_Args.lang, villV_Args.interactive)
                         if not calibreExecutable: continue
-                        
                         start_time = time.time()
                         try:
                             cmd = [calibreExecutable, tempMergedPdfPath, tempNovelEpubPath, '--title', bookTitle] + calibre_extra_args
@@ -1593,15 +1374,12 @@ def runTask(villV_Args):
                                     with open(coverPath, "wb") as f: f.write(coverData)
                                     cmd.extend(['--cover', coverPath])
                                     edenTempFiles.append(coverPath)
-                            
                             subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
                             duration = time.time() - start_time
                             calibreTimeTotal += duration
                             print(STRINGS['calibre_conversion_timed'][villV_Args.lang].format(duration))
-                            
                             finalTempPath = tempNovelEpubPath
-                            if calibre_extra_args:
-                                temp_file_is_clean = True
+                            if calibre_extra_args: temp_file_is_clean = True
                             print(STRINGS['consolidation_complete'][villV_Args.lang])
                         except Exception as error: 
                             print(STRINGS['pdf_to_epub_conversion_failed'][villV_Args.lang].format(error.stderr if hasattr(error, 'stderr') else error))
@@ -1613,13 +1391,12 @@ def runTask(villV_Args):
                          gc.collect()
 
             if doBatchProcessing and intermediateEpubs:
-                print("Mergin Batches...")
+                print("Merging Batches...")
                 finalMergedEpubPath = os.path.join(outputDirectory, f"{outputBaseName}_final_merged.epub")
                 edenTempFiles.append(finalMergedEpubPath)
                 finalMergeTempDir = os.path.join(outputDirectory, f"{outputBaseName}_final_merge_tmp")
                 os.makedirs(finalMergeTempDir, exist_ok=True)
                 edenTempDirectories.append(finalMergeTempDir)
-                
                 if mergeEpubsSmart(finalMergeTempDir, finalMergedEpubPath, bookTitle, villV_Args.lang, villV_Args.cover, input_files=intermediateEpubs, flat_merge=True):
                     finalTempPath = finalMergedEpubPath
                 else:
@@ -1628,14 +1405,8 @@ def runTask(villV_Args):
 
             if os.path.exists(finalTempPath):
                 print(f"\n{STRINGS['distributing'][villV_Args.lang]}")
-                
                 resolvedFormat = FORMAT_CHOICE_MAP.get(villV_Args.format, villV_Args.format)
-
-                targetFormats = []
-                if resolvedFormat == 'all_native':
-                    targetFormats = ['epub', 'pdf', 'cbz']
-                else:
-                    targetFormats = [resolvedFormat]
+                targetFormats = ['epub', 'pdf', 'cbz'] if resolvedFormat == 'all_native' else [resolvedFormat]
                 
                 calibre_extra_args = []
                 if getattr(villV_Args, 'remove_styling', False):
@@ -1706,27 +1477,21 @@ def runTask(villV_Args):
 
     print(STRINGS['all_folders_processed'][villV_Args.lang].format('='*20, '='*20))
 
-
 def confirmUserInput(languageCode, promptKey, promptValue):
     while True:
         confirmedInput = input(STRINGS[promptKey][languageCode].format(promptValue)).strip().lower()
-        if confirmedInput in ['y', 'yes']:
-            return True
-        elif confirmedInput in ['n', 'no']:
-            return False
-        else:
-            print(STRINGS['invalid_confirmation'][languageCode])
+        if confirmedInput in ['y', 'yes']: return True
+        elif confirmedInput in ['n', 'no']: return False
+        else: print(STRINGS['invalid_confirmation'][languageCode])
 
 def presentFileSummaryAndGetChoice(sourceDirectory, languageCode):
     supportedExtensions = ('.pdf', '.cbz', '.cbr', '.epub', '.mobi', '.azw3', '.docx', 
                              '.txt', '.kepub', '.fb2', '.lit', '.lrf', '.pdb', '.pmlz', 
                              '.rb', '.rtf', '.tcr', '.txtz', '.htmlz')
-    
     allFiles = kalpasNatsort.natsorted([f for f in os.listdir(sourceDirectory) if f.lower().endswith(supportedExtensions)])
     if not allFiles:
         print(STRINGS['error_no_files'][languageCode].format(sourceDirectory, 'supported files'))
         return None
-
     filesWithDecimals = [f for f in allFiles if re.search(r'\d+\.\d+', f)]
     
     formatCounts = {}
@@ -1735,32 +1500,22 @@ def presentFileSummaryAndGetChoice(sourceDirectory, languageCode):
         formatCounts[ext] = formatCounts.get(ext, 0) + 1
     
     breakdownStr = ""
-    for ext, count in formatCounts.items():
-        breakdownStr += f"    - {ext.upper()}: {count}\n"
+    for ext, count in formatCounts.items(): breakdownStr += f"    - {ext.upper()}: {count}\n"
 
     numericParts = [re.findall(r'(\d+)', f) for f in allFiles]
     numericParts = [int(p[0]) for p in numericParts if p]
     minNum, maxNum = (min(numericParts), max(numericParts)) if numericParts else ('N/A', 'N/A')
 
     summary = STRINGS['prompt_file_summary'][languageCode].format(
-        total_count=len(allFiles),
-        min_num=minNum,
-        max_num=maxNum,
-        breakdown=breakdownStr,
-        decimal_count=len(filesWithDecimals)
+        total_count=len(allFiles), min_num=minNum, max_num=maxNum, breakdown=breakdownStr, decimal_count=len(filesWithDecimals)
     )
-    print("\n" + "="*20)
-    print(summary)
-    print("="*20 + "\n")
+    print("\n" + "="*20 + "\n" + summary + "="*20 + "\n")
 
     while True:
         choice = input(STRINGS['prompt_confirm_decimal_ignore'][languageCode]).strip().lower()
-        if choice in ['y', 'yes']:
-            return [os.path.join(sourceDirectory, f) for f in allFiles]
-        elif choice in ['n', 'no']:
-            return [os.path.join(sourceDirectory, f) for f in allFiles if f not in filesWithDecimals]
-        else:
-            print(STRINGS['error_invalid_choice'][languageCode])
+        if choice in ['y', 'yes']: return [os.path.join(sourceDirectory, f) for f in allFiles]
+        elif choice in ['n', 'no']: return [os.path.join(sourceDirectory, f) for f in allFiles if f not in filesWithDecimals]
+        else: print(STRINGS['error_invalid_choice'][languageCode])
 
 def runInteractiveMode(globalLanguage='zh'): 
     print(STRINGS['interactive_mode_welcome'][globalLanguage])
@@ -1770,10 +1525,8 @@ def runInteractiveMode(globalLanguage='zh'):
         if modeChoice in ['1', '2']:
             selectedMode = 'comic' if modeChoice == '1' else 'novel'
             modeDisplayName = STRINGS[f'{selectedMode}_mode_name'][globalLanguage]
-            if confirmUserInput(globalLanguage, 'prompt_confirm_mode', modeDisplayName):
-                break
-        else:
-            print(STRINGS['error_invalid_choice'][globalLanguage])
+            if confirmUserInput(globalLanguage, 'prompt_confirm_mode', modeDisplayName): break
+        else: print(STRINGS['error_invalid_choice'][globalLanguage])
     
     sourcePath = ""
     while True:
@@ -1783,8 +1536,7 @@ def runInteractiveMode(globalLanguage='zh'):
             if confirmUserInput(globalLanguage, 'prompt_confirm_path', path):
                 sourcePath = path
                 break
-        else:
-            print(STRINGS['error_dir_not_exist'][globalLanguage].format(path))
+        else: print(STRINGS['error_dir_not_exist'][globalLanguage].format(path))
 
     filesToProcess = presentFileSummaryAndGetChoice(sourcePath, globalLanguage)
     if not filesToProcess:
@@ -1793,26 +1545,17 @@ def runInteractiveMode(globalLanguage='zh'):
     
     pardofelisTempDir = os.path.join(os.path.dirname(sourcePath), f"temp_processing_{int(time.time())}")
     os.makedirs(pardofelisTempDir, exist_ok=True)
-    
     try:
-        for f_path in filesToProcess:
-            shutil.copy(f_path, pardofelisTempDir)
-        
+        for f_path in filesToProcess: shutil.copy(f_path, pardofelisTempDir)
         processingPath = pardofelisTempDir
-
         while True:
             print(STRINGS['prompt_final_format'][globalLanguage])
             formatChoice = input("> ").strip()
             if formatChoice in FORMAT_CHOICE_MAP:
                 formatName = FORMAT_CHOICE_MAP[formatChoice]
-                if formatName == 'all_native':
-                    formatDisplay = "全部原生格式 (EPUB+PDF+CBZ)"
-                else:
-                    formatDisplay = formatName.upper()
-                if confirmUserInput(globalLanguage, 'prompt_confirm_format', formatDisplay):
-                    break
-            else:
-                print(STRINGS['error_invalid_choice'][globalLanguage])
+                formatDisplay = "全部原生格式 (EPUB+PDF+CBZ)" if formatName == 'all_native' else formatName.upper()
+                if confirmUserInput(globalLanguage, 'prompt_confirm_format', formatDisplay): break
+            else: print(STRINGS['error_invalid_choice'][globalLanguage])
 
         selectedCover = None
         while True:
@@ -1822,8 +1565,7 @@ def runInteractiveMode(globalLanguage='zh'):
                 if testCoverData:
                     selectedCover = 'auto'
                     break
-                else:
-                    print(STRINGS['cover_extract_fail'][globalLanguage])
+                else: print(STRINGS['cover_extract_fail'][globalLanguage])
             elif choice in ['n', 'no']:
                 while True:
                     customPath = input(STRINGS['prompt_cover_path'][globalLanguage]).strip().replace('"', '')
@@ -1847,19 +1589,15 @@ def runInteractiveMode(globalLanguage='zh'):
         sakuraParams.outputpath = None
         sakuraParams.cover = selectedCover
         sakuraParams.image_format = 'jpeg'
-        
         defaultBaseName = os.path.basename(os.path.normpath(sourcePath))
         outputBaseName = input(STRINGS['prompt_output_base_name'][globalLanguage].format(defaultBaseName)).strip() or defaultBaseName
         sakuraParams.output = outputBaseName
-        
         defaultQuality = 85
         qualityInput = input(STRINGS['prompt_image_quality'][globalLanguage].format(defaultQuality)).strip()
         sakuraParams.quality = int(qualityInput) if qualityInput.isdigit() and 1 <= int(qualityInput) <= 100 else defaultQuality
-        
         defaultTitle = sakuraParams.output or os.path.basename(os.path.normpath(sourcePath))
         titleInput = input(STRINGS['prompt_book_title'][globalLanguage].format(defaultTitle)).strip() or defaultTitle
         sakuraParams.title = titleInput
-
         sakuraParams.batch = False
         sakuraParams.batch_size = None
 
@@ -1870,8 +1608,7 @@ def runInteractiveMode(globalLanguage='zh'):
                 totalFiles = len(filesToProcess)
                 if totalFiles == 0:
                     print(STRINGS['error_no_files'][globalLanguage].format(sourcePath, 'supported files'))
-                    return # Exit interactive mode if no files
-
+                    return
                 while True:
                     try:
                         batchCountInput = input(STRINGS['prompt_batch_count'][globalLanguage]).strip()
@@ -1879,17 +1616,13 @@ def runInteractiveMode(globalLanguage='zh'):
                         if batchCount <= 0:
                             print(STRINGS['error_invalid_choice'][globalLanguage])
                             continue
-                        
                         sakuraParams.batch_size = max(1, round(totalFiles / batchCount))
                         print(f"将分 {batchCount} 批处理，每批约 {sakuraParams.batch_size} 个文件。")
                         break
-                    except ValueError:
-                        print(STRINGS['error_invalid_choice'][globalLanguage])
+                    except ValueError: print(STRINGS['error_invalid_choice'][globalLanguage])
                 break
-            elif batchEnableChoice in ['n', 'no']:
-                break
-            else:
-                print(STRINGS['error_invalid_choice'][globalLanguage])
+            elif batchEnableChoice in ['n', 'no']: break
+            else: print(STRINGS['error_invalid_choice'][globalLanguage])
 
         sakuraParams.remove_styling = False
         if selectedMode == 'novel':
@@ -1901,19 +1634,15 @@ def runInteractiveMode(globalLanguage='zh'):
                 elif rsChoice in ['n', 'no']:
                     sakuraParams.remove_styling = False
                     break
-                else:
-                    print(STRINGS['error_invalid_choice'][globalLanguage])
+                else: print(STRINGS['error_invalid_choice'][globalLanguage])
 
         defaultWorkers = os.cpu_count() or 1
         workersPrompt = STRINGS['prompt_ask_workers'][globalLanguage].format(defaultWorkers=defaultWorkers)
         workersInput = input(workersPrompt).strip()
         sakuraParams.workers = int(workersInput) if workersInput.isdigit() and int(workersInput) > 0 else defaultWorkers
-
         sakuraParams.interactive = True 
-        
         print(STRINGS['starting_task'][globalLanguage])
         runTask(sakuraParams)
-
     finally:
         if os.path.exists(pardofelisTempDir):
             shutil.rmtree(pardofelisTempDir)
@@ -1929,14 +1658,10 @@ def showMainMenu(argumentParser):
             print("2) English")
             print("3) 日本語 (Japanese)")
             langChoice = input("> ").strip()
-            if langChoice == '1':
-                globalLanguage = 'zh'
-            elif langChoice == '2':
-                globalLanguage = 'en'
-            elif langChoice == '3':
-                globalLanguage = 'ja'
-            else:
-                globalLanguage = 'zh'  
+            if langChoice == '1': globalLanguage = 'zh'
+            elif langChoice == '2': globalLanguage = 'en'
+            elif langChoice == '3': globalLanguage = 'ja'
+            else: globalLanguage = 'zh'  
             runInteractiveMode(globalLanguage)
             break
         elif choice == '2':
@@ -1945,14 +1670,12 @@ def showMainMenu(argumentParser):
         elif choice == '3':
             print(f"{STRINGS['exiting']['en']} / {STRINGS['exiting']['zh']} / {STRINGS['exiting']['ja']}")
             break
-        else:
-            print(STRINGS['error_invalid_choice']['en'])
+        else: print(STRINGS['error_invalid_choice']['en'])
 
 if __name__ == '__main__':
     checkDependencies()
     suParser = createArgumentParser()
-    if len(sys.argv) == 1: 
-        showMainMenu(suParser)
+    if len(sys.argv) == 1: showMainMenu(suParser)
     else:
         try:
             kosmaArgs = suParser.parse_args()
@@ -1961,5 +1684,4 @@ if __name__ == '__main__':
         except argparse.ArgumentError as error: 
             print(STRINGS['error_arg_parse'][kosmaArgs.lang].format(error))
         except SystemExit as error: 
-             if error.code != 0:
-                 print(STRINGS['error_parsing_arguments'][kosmaArgs.lang])
+             if error.code != 0: print(STRINGS['error_parsing_arguments'][kosmaArgs.lang])
