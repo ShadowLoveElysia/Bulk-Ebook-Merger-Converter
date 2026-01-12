@@ -1570,6 +1570,12 @@ def runTask(villV_Args):
                 try:
                     if os.path.exists(filePath): os.remove(filePath)
                 except Exception: pass
+            for filePath in edenTempFiles:
+                try:
+                    if os.path.exists(filePath):
+                        os.remove(filePath)
+                        print(STRINGS['deleted_temp_file'][villV_Args.lang].format(filePath))
+                except Exception: pass
             for dirPath in edenTempDirectories:
                 if os.path.exists(dirPath):
                     shutil.rmtree(dirPath)
